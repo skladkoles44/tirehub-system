@@ -1,0 +1,64 @@
+version: "1.0"
+supplier: "Kolobox"
+
+format_hints:
+  header_row_1based: 1
+  subheader_row_1based: 2
+  data_start_row_1based: 3
+  sheet: "TDSheet"
+
+# Column index is 1-based (как в твоём json)
+columns:
+  article_primary:
+    type: column_position
+    column: 7
+    target: article
+    priority: 200
+  article_fallback:
+    type: column_position
+    column: 8
+    target: article
+    priority: 150
+
+  name:
+    type: column_position
+    column: 10
+    target: name
+    priority: 200
+
+  brand:
+    type: column_position
+    column: 9
+    target: brand
+    priority: 200
+
+  # На старте берём одну цену детерминированно: "Опт / Цена" (col 11)
+  price:
+    type: column_position
+    column: 11
+    target: price
+    priority: 200
+
+defaults:
+  currency: "RUB"
+
+# Explode: одна входная строка -> N строк по складам, если qty не пустой.
+# warehouse_name берём из h1 (первая строка шапки), детерминированно по column asc.
+warehouses:
+  - column: 14
+    warehouse_name: "Центр. Склад"
+    qty_target: qty
+  - column: 15
+    warehouse_name: "Саранск опт"
+    qty_target: qty
+  - column: 16
+    warehouse_name: "Тольятти опт(АХ)"
+    qty_target: qty
+  - column: 17
+    warehouse_name: "Уфа опт(Соединительное шоссе)"
+    qty_target: qty
+
+ignore_columns: [1,2,3,4,5,6,12,13,18]
+notes:
+  - "col14 ведём как остаток (по фактическим значениям 4.0/1.0/>40)"
+  - "col12/13 (розница/миц) пока игнорируем, чтобы не плодить многомерную цену на этапе парсера"
