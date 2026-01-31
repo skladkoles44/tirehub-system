@@ -1,0 +1,12 @@
+version: "1.0"
+pipeline:
+  - name: "unicode_nfc"
+  - name: "strip_and_collapse"
+  - name: "lowercase_locale_agnostic"
+  - name: "homoglyph_replacement"
+  - name: "remove_surrounding_punctuation"
+prohibited_transforms:
+  - transliteration
+  - stemming
+  - lemmatization
+  - stopword_removal

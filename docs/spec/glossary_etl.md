@@ -23,8 +23,8 @@
 
 ## Mapping and rules
 
-- **Mapping (supplier mapping)**: YAML-правила для сопоставления колонок/полей поставщика с целевыми полями (article/name/price/qty/warehouse...). Хранятся в `mappings/suppliers/suppliers/<supplier>.yaml`.
-- **Ruleset**: версионируемый набор правил (brands/sizes/sanity/signature_normalization/impact/token_pattern_fields).
+- **Mapping (supplier mapping)**: YAML-правила для сопоставления колонок/полей поставщика с целевыми полями (article/name/price/qty/warehouse...). Хранятся в `mappings/suppliers/<supplier>.yaml`.
+- **Ruleset**: версионируемый набор правил (sanity/signature_normalization/impact/token_pattern_fields; позже — brands/sizes и т.п.).
 - **ruleset_versions**: JSON-словарь версий rulesets, участвующих в обработке (фиксируется в данных и snapshots).
 - **decomposer_version**: версия кода decomposer (фиксируется в данных и snapshots).
 
@@ -73,4 +73,3 @@
 
 - **Golden set**: версионированный набор NDJSON кейсов для проверки контрактности (L1, rejected, conflicts/audit) и применимости патчей/backfill.
 - **Baskets**: `positive` (без конфликтов), `negative` (ожидаемый rejected), `conflict` (ожидаемый audit + needs_review, учёт по L1).
-

@@ -1,0 +1,12 @@
+version: "1.0"
+fields_in_core:
+  - brand
+  - season
+  - stud
+  - runflat
+  - li
+  - si
+fields_not_in_core:
+  - model
+  - name
+  - comment

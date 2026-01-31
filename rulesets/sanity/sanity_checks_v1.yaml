@@ -1,0 +1,12 @@
+version: "1.0"
+checks:
+  - id: "SC001"
+    field: "qty"
+    condition: "value >= 0"
+    error_code: "negative_quantity"
+    severity: "critical"
+  - id: "SC002"
+    field: "price"
+    condition: "value >= 0"
+    error_code: "negative_price"
+    severity: "critical"

@@ -1,0 +1,11 @@
+version: "1.0"
+field_importance:
+  brand: 1.5
+  size: 2.0
+  price: 1.2
+  qty: 1.0
+  season: 0.8
+conflict_severity:
+  mismatch: 1.0
+  l1_missing: 0.7
+  l2_missing: 0.3
