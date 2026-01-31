@@ -138,7 +138,7 @@ BEGIN
     v_artifact_id,
     p_snapshot_id,
     p_curated_version,
-    decode(repeat('00', 32), 'hex'),          -- placeholder
+    decode(substr(encode(digest((p_snapshot_id::text || '|' || p_curated_version)::bytea, 'sha256'), 'hex'), 1, 64), 'hex'),          -- placeholder
     jsonb_build_object('snapshot_id', p_snapshot_id, 'curated_version', p_curated_version),
     p_published_by
   );
@@ -147,7 +147,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
-GRANT EXECUTE ON FUNCTION ssot_curated_api.publish_curated(UUID,TEXT,TEXT) TO downstream_reader;
 
 -- === FK provenance (optional but adds traceability) ===
 ALTER TABLE ssot_curated_internal.offers_v1
