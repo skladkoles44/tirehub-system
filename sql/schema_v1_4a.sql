@@ -78,17 +78,19 @@ CREATE TABLE IF NOT EXISTS ssot_curated_internal.offers_v1 (
   artifact_id UUID NOT NULL REFERENCES ssot_curated_internal.curated_artifacts(artifact_id),
   offer_id UUID NOT NULL,
   canonical_item_id UUID NOT NULL,
+
   supplier_id TEXT NOT NULL,
   warehouse_key TEXT NOT NULL,
-  sku_candidate_key TEXT NOT NULL,
   price DECIMAL,
   qty INTEGER,
   currency TEXT,
   quality_flags JSONB DEFAULT '[]'::jsonb,
+
+  sku_candidate_key TEXT NOT NULL,
+
   PRIMARY KEY (artifact_id, offer_id)
 );
 
--- === API SURFACE ===
 CREATE OR REPLACE FUNCTION ssot_curated_api.get_current_artifact(
   p_environment TEXT DEFAULT 'production',
   p_channel TEXT DEFAULT 'default'
@@ -119,7 +121,8 @@ CREATE OR REPLACE FUNCTION ssot_curated_api.get_offers_by_sku(
     AND NOT (quality_flags ? 'blocked_for_aggregation');
 $$ LANGUAGE SQL;
 
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ssot_curated_api TO downstream_reader;
+GRANT EXECUTE ON FUNCTION ssot_curated_api.get_current_artifact(TEXT, TEXT) TO downstream_reader;
+GRANT EXECUTE ON FUNCTION ssot_curated_api.get_offers_by_sku(UUID, TEXT) TO downstream_reader;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ssot_curated_api TO etl_writer;
 
 -- === MISSING: publish_curated (stub) ===
@@ -129,25 +132,29 @@ CREATE OR REPLACE FUNCTION ssot_curated_api.publish_curated(
   p_published_by TEXT DEFAULT 'system'
 ) RETURNS UUID AS $$
 DECLARE
+  v_fingerprint BYTEA;
   v_artifact_id UUID;
 BEGIN
-  -- Заглушка: фиксируем сам факт публикации, но не генерим offers_v1
-  v_artifact_id := gen_random_uuid();
+  v_fingerprint := digest((p_snapshot_id::text || '|' || p_curated_version)::text, 'sha256');
 
   INSERT INTO ssot_curated_internal.curated_artifacts(
     artifact_id, snapshot_id, curated_version, fingerprint, fingerprint_input, published_by
   ) VALUES (
-    v_artifact_id,
+    gen_random_uuid(),
     p_snapshot_id,
     p_curated_version,
-    decode(substr(encode(digest((p_snapshot_id::text || '|' || p_curated_version)::bytea, 'sha256'), 'hex'), 1, 64), 'hex'),          -- placeholder
+    v_fingerprint,
     jsonb_build_object('snapshot_id', p_snapshot_id, 'curated_version', p_curated_version),
     p_published_by
-  );
+  )
+  ON CONFLICT (fingerprint) DO UPDATE
+    SET published_at = ssot_curated_internal.curated_artifacts.published_at
+  RETURNING artifact_id INTO v_artifact_id;
 
   RETURN v_artifact_id;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
+
 
 
 -- === FK provenance (optional but adds traceability) ===
