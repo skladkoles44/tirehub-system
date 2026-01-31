@@ -119,3 +119,53 @@ CREATE OR REPLACE FUNCTION ssot_curated_api.get_offers_by_sku(
 $$ LANGUAGE SQL;
 
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ssot_curated_api TO downstream_reader;
+
+-- === MISSING: publish_curated (stub) ===
+CREATE OR REPLACE FUNCTION ssot_curated_api.publish_curated(
+  p_snapshot_id UUID,
+  p_curated_version TEXT DEFAULT 'v1',
+  p_published_by TEXT DEFAULT 'system'
+) RETURNS UUID AS $$
+DECLARE
+  v_artifact_id UUID;
+BEGIN
+  -- Заглушка: фиксируем сам факт публикации, но не генерим offers_v1
+  v_artifact_id := gen_random_uuid();
+
+  INSERT INTO ssot_curated_internal.curated_artifacts(
+    artifact_id, snapshot_id, curated_version, fingerprint, fingerprint_input, published_by
+  ) VALUES (
+    v_artifact_id,
+    p_snapshot_id,
+    p_curated_version,
+    decode(repeat('00', 32), 'hex'),          -- placeholder
+    jsonb_build_object('snapshot_id', p_snapshot_id, 'curated_version', p_curated_version),
+    p_published_by
+  );
+
+  RETURN v_artifact_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+GRANT EXECUTE ON FUNCTION ssot_curated_api.publish_curated(UUID,TEXT,TEXT) TO downstream_reader;
+
+-- === FK provenance (optional but adds traceability) ===
+ALTER TABLE ssot_curated_internal.offers_v1
+  ADD CONSTRAINT IF NOT EXISTS fk_offers_v1_canonical_item
+  FOREIGN KEY (canonical_item_id)
+  REFERENCES ssot_ingestion.canonical_items_source(id);
+
+-- === INDEXES ===
+CREATE INDEX IF NOT EXISTS idx_offers_v1_artifact_sku
+  ON ssot_curated_internal.offers_v1(artifact_id, sku_candidate_key);
+
+CREATE INDEX IF NOT EXISTS idx_pointers_env_channel_time
+  ON ssot_curated_internal.artifact_pointers(environment, channel, valid_from DESC);
+
+-- === BASIC GRANTS for ETL writer ===
+GRANT USAGE ON SCHEMA ssot_ingestion TO etl_writer;
+GRANT INSERT, SELECT ON ssot_ingestion.canonical_snapshots TO etl_writer;
+GRANT INSERT, SELECT ON ssot_ingestion.canonical_items_source TO etl_writer;
+GRANT INSERT, SELECT ON ssot_ingestion.warehouse_keys TO etl_writer;
+GRANT INSERT, SELECT ON ssot_ingestion.warehouse_aliases TO etl_writer;
+
