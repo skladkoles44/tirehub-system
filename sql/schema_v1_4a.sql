@@ -16,6 +16,7 @@ END$$;
 
 REVOKE ALL ON SCHEMA ssot_curated_internal FROM PUBLIC;
 GRANT USAGE ON SCHEMA ssot_curated_api TO downstream_reader;
+GRANT USAGE ON SCHEMA ssot_curated_api TO etl_writer;
 
 -- === INGESTION (минимум) ===
 CREATE TABLE IF NOT EXISTS ssot_ingestion.canonical_snapshots (
@@ -119,6 +120,7 @@ CREATE OR REPLACE FUNCTION ssot_curated_api.get_offers_by_sku(
 $$ LANGUAGE SQL;
 
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ssot_curated_api TO downstream_reader;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ssot_curated_api TO etl_writer;
 
 -- === MISSING: publish_curated (stub) ===
 CREATE OR REPLACE FUNCTION ssot_curated_api.publish_curated(
