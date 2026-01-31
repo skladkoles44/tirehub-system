@@ -1,3 +1,6 @@
+## ОБЯЗАТЕЛЬНЫЙ ШАГ ПОСЛЕ BACKFILL
+- publish_curated(snapshot_id, curated_version)
+
 # Backfill + snapshots contract v1.6+
 
 ## Principle
