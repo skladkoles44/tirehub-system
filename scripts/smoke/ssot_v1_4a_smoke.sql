@@ -152,6 +152,8 @@ SELECT
   10,
   'RUB',
   '[]'::jsonb
+
+FROM cur_art
 ;
 UPDATE ssot_curated_internal.offers_v1
 SET quality_flags = jsonb_build_array('blocked_for_aggregation')
