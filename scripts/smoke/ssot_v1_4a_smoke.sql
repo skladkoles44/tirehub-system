@@ -90,20 +90,22 @@ cur AS (
 )
 SELECT
   'assert_current_pointer' AS kind,
-  (SELECT cnt FROM ptr_cnt) AS current_pointers_count,
-  (SELECT reason FROM ptr_one) AS picked_reason,
-  (SELECT current_artifact FROM cur) AS current_artifact,
-  (SELECT artifact_id FROM ptr_one) AS pointer_artifact,
-  ((SELECT cnt FROM ptr_cnt) = 1) AS ok_exactly_one_current,
-  ((SELECT reason FROM ptr_one) = 'smoke pointer') AS ok_reason,
-  ((SELECT current_artifact FROM cur) = (SELECT artifact_id FROM ptr_one)) AS ok_current_matches_pointer
+  (SELECT cnt FROM ptr_cnt)::text AS c1_current_pointers_count,
+  COALESCE((SELECT reason FROM ptr_one), '') AS c2_picked_reason,
+  COALESCE((SELECT current_artifact::text FROM cur), '') AS c3_current_artifact,
+  (
+    'ptr_artifact=' || COALESCE((SELECT artifact_id::text FROM ptr_one), '') ||
+    '; ok_exactly_one_current=' || ((SELECT cnt FROM ptr_cnt) = 1)::text ||
+    '; ok_reason=' || (COALESCE((SELECT reason FROM ptr_one), '') = 'smoke pointer')::text ||
+    '; ok_current_matches_pointer=' || ((SELECT current_artifact FROM cur) = (SELECT artifact_id FROM ptr_one))::text
+  ) AS c4_flags
 UNION ALL
 SELECT
   'ERROR_multiple_current_pointers' AS kind,
-  artifact_id::text,
-  reason,
-  valid_from::text,
-  COALESCE(valid_to::text,'NULL')
+  artifact_id::text AS c1_artifact_id,
+  reason AS c2_reason,
+  valid_from::text AS c3_valid_from,
+  COALESCE(valid_to::text, '') AS c4_valid_to
 FROM ptr_list
 WHERE (SELECT cnt FROM ptr_cnt) > 1;
 
