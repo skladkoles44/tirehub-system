@@ -109,7 +109,32 @@ SELECT
 FROM ptr_list
 WHERE (SELECT cnt FROM ptr_cnt) > 1;
 
-WITH cur_art AS (
+WITH ensure_snap AS (
+  INSERT INTO ssot_ingestion.canonical_snapshots(snapshot_id, ruleset_versions, decomposer_version)
+  VALUES (
+    '00000000-0000-0000-0000-00000000a401'::uuid,
+    '{}'::jsonb,
+    'smoke'
+  )
+  ON CONFLICT (snapshot_id) DO NOTHING
+  RETURNING snapshot_id
+),
+ensure_item AS (
+  INSERT INTO ssot_ingestion.canonical_items_source(id, snapshot_id, supplier_id, raw, quality_flags)
+  VALUES (
+    '00000000-0000-0000-0000-00000000d401'::uuid,
+    '00000000-0000-0000-0000-00000000a401'::uuid,
+    'test_supplier',
+    '{}'::jsonb,
+    '[]'::jsonb
+  )
+  ON CONFLICT (id) DO UPDATE SET
+    snapshot_id = EXCLUDED.snapshot_id,
+    supplier_id = EXCLUDED.supplier_id,
+    raw = EXCLUDED.raw
+  RETURNING id
+),
+cur_art AS (
   SELECT ssot_curated_api.get_current_artifact('production','default') AS artifact_id
 )
 INSERT INTO ssot_curated_internal.offers_v1(
@@ -119,7 +144,7 @@ INSERT INTO ssot_curated_internal.offers_v1(
 SELECT
   cur_art.artifact_id,
   '00000000-0000-0000-0000-00000000c401'::uuid,
-  '00000000-0000-0000-0000-00000000d401'::uuid,
+  (SELECT id FROM ensure_item),
   'test_supplier',
   'msk_dc',
   'michelin|225/65r17|102h',
@@ -127,14 +152,7 @@ SELECT
   10,
   'RUB',
   '[]'::jsonb
-FROM cur_art;
-
-SELECT 'offers_before_block_count' AS kind, count(*) AS rows
-FROM ssot_curated_api.get_offers_by_sku(
-  ssot_curated_api.get_current_artifact('production','default'),
-  'michelin|225/65r17|102h'
-);
-
+;
 UPDATE ssot_curated_internal.offers_v1
 SET quality_flags = jsonb_build_array('blocked_for_aggregation')
 WHERE offer_id='00000000-0000-0000-0000-00000000c401'::uuid;
