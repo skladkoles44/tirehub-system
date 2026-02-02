@@ -54,7 +54,7 @@ DECLARE
   v_has_warehouse_description boolean;
 BEGIN
   INSERT INTO smoke_ctx(snapshot_id, artifact_id, item_id, supplier_id, supplier_wh_name, sku_candidate_key)
-  VALUES (v_snapshot_id, v_artifact_id, v_item_id, v_supplier_id, v_supplier_wh_name, v_sku);
+  VALUES ('seed', v_snapshot_id, v_artifact_id, v_item_id, v_supplier_id, v_supplier_wh_name, v_sku);
 
   SELECT EXISTS(
     SELECT 1 FROM pg_proc p
@@ -111,8 +111,9 @@ BEGIN
       last_seen_at = now();
 
   INSERT INTO ssot_ingestion.canonical_snapshots(
-    snapshot_id, ruleset_versions, decomposer_version, created_at, status, sealed_at
+    parser_id, snapshot_id, ruleset_versions, decomposer_version, created_at, status, sealed_at
   ) VALUES (
+    'seed',
     v_snapshot_id,
     '{}'::jsonb,
     'smoke_v1_4a',

@@ -38,7 +38,7 @@ gen AS (
 seed AS (
   -- warehouse infra (idempotent)
   INSERT INTO ssot_ingestion.warehouse_keys(warehouse_key, display_name)
-  VALUES ('msk_dc', 'Moscow DC (smoke)'), ('spb_dc', 'SPB DC (smoke)')
+  VALUES ('seed', 'msk_dc', 'Moscow DC (smoke)'), ('spb_dc', 'SPB DC (smoke)')
   ON CONFLICT (warehouse_key) DO UPDATE SET display_name = EXCLUDED.display_name
   RETURNING 1
 ),
@@ -52,9 +52,10 @@ alias AS (
 ),
 snap AS (
   INSERT INTO ssot_ingestion.canonical_snapshots(
-    snapshot_id, ruleset_versions, decomposer_version, created_at, status, sealed_at
+    parser_id, snapshot_id, ruleset_versions, decomposer_version, created_at, status, sealed_at
   )
   SELECT
+    'seed'::text,
     g.snapshot_id,
     '{}'::jsonb,
     'smoke_v1_4a',
