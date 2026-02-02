@@ -38,7 +38,7 @@ gen AS (
 seed AS (
   -- warehouse infra (idempotent)
   INSERT INTO ssot_ingestion.warehouse_keys(warehouse_key, display_name)
-  VALUES ('seed', 'msk_dc', 'Moscow DC (smoke)'), ('spb_dc', 'SPB DC (smoke)')
+  VALUES ('msk_dc', 'Moscow DC (smoke)'), ('spb_dc', 'SPB DC (smoke)')
   ON CONFLICT (warehouse_key) DO UPDATE SET display_name = EXCLUDED.display_name
   RETURNING 1
 ),
