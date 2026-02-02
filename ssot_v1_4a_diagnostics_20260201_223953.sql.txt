@@ -1,0 +1,24 @@
+=== SSOT v1.4a DIAGNOSTICS ===
+TS=20260201_223953
+PWD=/home/etl/apps/tirehub
+DB=tirehub_etl
+
+API_FUNC|get_current_artifact|p_environment text DEFAULT 'production'::text, p_channel text DEFAULT 'default'::text
+API_FUNC|get_offers_by_sku|p_artifact_id uuid, p_sku_candidate_key text
+API_FUNC|publish_curated|p_snapshot_id uuid, p_curated_version text DEFAULT 'v1'::text, p_published_by text DEFAULT 'system'::text
+TABLE|ssot_curated_internal.artifact_pointers
+TABLE|ssot_curated_internal.curated_artifacts
+TABLE|ssot_curated_internal.offers_v1
+TABLE|ssot_ingestion.canonical_items_source
+TABLE|ssot_ingestion.canonical_snapshots
+TABLE|ssot_ingestion.warehouse_aliases
+TABLE|ssot_ingestion.warehouse_keys
+WAREHOUSE_KEYS_CNT|0
+WAREHOUSE_ALIASES_CNT|0
+SNAPSHOT_STATUS|sealed|1
+ARTIFACT_STATUS|active|1
+COUNT|canonical_snapshots|1
+COUNT|canonical_items_source|1
+COUNT|curated_artifacts|1
+COUNT|offers_v1|1
+COUNT|artifact_pointers|1
