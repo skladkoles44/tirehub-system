@@ -1,0 +1,4 @@
+
+# local venvs / scratch
+.venv_xls/
+tmp/
