@@ -2,3 +2,7 @@
 # local venvs / scratch
 .venv_xls/
 tmp/
+
+__pycache__/
+*.pyc
+.venv*/
