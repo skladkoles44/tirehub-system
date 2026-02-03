@@ -1,105 +1,187 @@
 #!/usr/bin/env python3
-import json
-import os
-import sys
-from pathlib import Path
-
+import json, re, sys
 import xlrd
 
-SHEET_NAME = "TDSheet"
-HEADER_ROWS = 2
+SHEET_NAME="TDSheet"
+HEADER_ROWS=2
 
-# KOLOBOX_XLS_MAPPING_V1.yaml -> layouts.komplektatsii_v1.columns (indexes)
-C = {
-    "supplier_id": "kolobox",
-    "parser_id": "kolobox_xls_v1",
-    "supplier_article_col": 6,
-    "supplier_code_1c_col": 7,
-    "brand_col": 8,
-    "name_col": 9,
-    "price_opt_col": 10,
-    "price_retail_col": 11,
-    "price_mic_col": 12,
-    "warehouse_qty_cols": [14, 15, 16],
-    "order_col": 17,
-}
+# v1 (SSOT по evidence)
+COL_ARTICLE=6
+COL_CODE_1C=7
+COL_BRAND=8
+COL_NAME=9
+COL_PRICE_OPT=10
+COL_PRICE_RETAIL=11
+COL_PRICE_MIC=12
+CENTER_COL=13
+QTY_COLS=[14,15,16]  # города "Остаток"
 
-def as_num(v):
-    if isinstance(v, (int, float)):
-        return float(v)
-    if isinstance(v, str):
-        s = v.strip().replace(" ", "").replace(",", ".")
-        if not s:
-            return None
-        try:
-            return float(s)
-        except Exception:
-            return None
-    return None
+def norm_ws(s):
+    s = "" if s is None else str(s)
+    return re.sub(r"\s+", " ", s.strip())
 
-def parse(path: str) -> dict:
-    wb = xlrd.open_workbook(path)
-    sh = wb.sheet_by_name(SHEET_NAME)
+def norm_wh(s):
+    return norm_ws(s).lower()
 
-    stats = {
-        "rows_total_seen": 0,
-        "rows_with_price_opt_gt_0": 0,
-        "rows_with_any_qty_gt_0": 0,
-    }
-    out = []
+def as_num(x):
+    if x is None: return None
+    if isinstance(x,(int,float)): return float(x)
+    s = norm_ws(x)
+    if s=="": return None
+    try:
+        return float(s.replace(",","."))
+    except:
+        return None
+
+def header_cells(sh,r):
+    return [norm_ws(sh.cell_value(r,c)) for c in range(sh.ncols)]
+
+def validate_header(sh):
+    row1=header_cells(sh,0); row2=header_cells(sh,1)
+    assert row2[COL_PRICE_OPT].lower()=="цена", f"bad row2@price_opt {row2[COL_PRICE_OPT]!r}"
+    assert "опт" in row1[COL_PRICE_OPT].lower(), f"bad row1@price_opt {row1[COL_PRICE_OPT]!r}"
+    assert "центр" in row1[CENTER_COL].lower(), f"bad row1@center {row1[CENTER_COL]!r}"
+    # row2[CENTER_COL] может быть "Центр. Склад" или завтра стать "Остаток" — разрешаем
+    if row2[CENTER_COL] and row2[CENTER_COL].lower() not in ("центр. склад","остаток"):
+        raise AssertionError(f"bad row2@center {row2[CENTER_COL]!r}")
+    for qc in QTY_COLS:
+        assert row2[qc].lower()=="остаток", f"bad row2@qty col={qc}: {row2[qc]!r}"
+        assert row1[qc]!="", f"empty row1 warehouse name at col={qc}"
+    return row1,row2
+
+def sku_key(article, code1c):
+    a=norm_ws(article); c=norm_ws(code1c)
+    return a or c or ""
+
+def parse(xls_path):
+    wb=xlrd.open_workbook(xls_path)
+    sh=wb.sheet_by_name(SHEET_NAME)
+    row1,row2=validate_header(sh)
+
+    stats=dict(
+        rows_total_seen=0,
+        rows_with_price_opt_gt_0=0,
+        rows_with_any_qty_gt_0=0,
+        rows_emitted=0,
+        rows_missing_sku_key=0,
+        emitted_no_qty=0,
+        emitted_center=0,
+        emitted_city=0,
+    )
+
+    sample=[]
+    out=[]
 
     for r in range(HEADER_ROWS, sh.nrows):
         stats["rows_total_seen"] += 1
 
-        def cell(ci):
-            return sh.cell_value(r, ci)
+        article=sh.cell_value(r,COL_ARTICLE)
+        code1c=sh.cell_value(r,COL_CODE_1C)
+        sku=sku_key(article, code1c)
+        if not sku: stats["rows_missing_sku_key"] += 1
 
-        price_opt = as_num(cell(C["price_opt_col"]))
-        if price_opt is not None and price_opt > 0:
-            stats["rows_with_price_opt_gt_0"] += 1
+        price=as_num(sh.cell_value(r,COL_PRICE_OPT))
+        if price and price>0: stats["rows_with_price_opt_gt_0"] += 1
 
-        any_qty = False
-        wh = []
-        for ci in C["warehouse_qty_cols"]:
-            q = as_num(cell(ci))
-            if q is not None and q > 0:
-                any_qty = True
-            wh.append({"col": ci, "qty": q})
+        price_retail=as_num(sh.cell_value(r,COL_PRICE_RETAIL))
+        price_mic=as_num(sh.cell_value(r,COL_PRICE_MIC))
 
-        if any_qty:
-            stats["rows_with_any_qty_gt_0"] += 1
+        # Собираем склады (центральный + города), потом explode
+        whs=[]
+        # центр. склад
+        center_qty=as_num(sh.cell_value(r,CENTER_COL))
+        if center_qty and center_qty>0:
+            whs.append(dict(
+                supplier_warehouse_name=norm_wh("Центр. Склад"),
+                supplier_warehouse_name_raw=row1[CENTER_COL] or "Центр. Склад",
+                qty=center_qty,
+                col_idx0=CENTER_COL,
+                kind="center"
+            ))
+        # города
+        for qc in QTY_COLS:
+            q=as_num(sh.cell_value(r,qc))
+            if q and q>0:
+                whs.append(dict(
+                    supplier_warehouse_name=norm_wh(row1[qc] or f"c{qc}"),
+                    supplier_warehouse_name_raw=row1[qc] or f"c{qc}",
+                    qty=q,
+                    col_idx0=qc,
+                    kind="city"
+                ))
 
-        rec = {
-            "supplier_id": C["supplier_id"],
-            "parser_id": C["parser_id"],
-            "raw": {
-                "supplier_article": cell(C["supplier_article_col"]),
-                "supplier_code_1c": cell(C["supplier_code_1c_col"]),
-                "brand_raw": cell(C["brand_col"]),
-                "name_raw": cell(C["name_col"]),
-                "price_opt": price_opt,
-                "price_retail": as_num(cell(C["price_retail_col"])),
-                "price_mic": as_num(cell(C["price_mic_col"])),
-            },
-            "warehouses_qty_by_col": wh,
-            "order_flag": cell(C["order_col"]),
-            "source_row_1based": r + 1,
-        }
-        out.append(rec)
+        total_qty=sum(w["qty"] for w in whs) if whs else 0.0
+        if total_qty>0: stats["rows_with_any_qty_gt_0"] += 1
 
-    return {
-        "file": path,
-        "sheet": SHEET_NAME,
-        "header_rows": HEADER_ROWS,
-        "stats": stats,
-        "sample_first_3": out[:3],
-    }
+        base_raw=dict(
+            supplier_article=norm_ws(article),
+            supplier_code_1c=norm_ws(code1c),
+            sku_candidate_key=sku,
+            brand_raw=norm_ws(sh.cell_value(r,COL_BRAND)),
+            name_raw=norm_ws(sh.cell_value(r,COL_NAME)),
+            price=price,
+            currency="RUB",
+            price_retail=price_retail,
+            price_mic=price_mic,
+        )
 
-def main():
-    if len(sys.argv) < 2:
-        raise SystemExit("Usage: parser_komplektatsii_v1.py <path_to_xls>")
-    res = parse(sys.argv[1])
-    print(json.dumps(res, ensure_ascii=False, indent=2, default=str))
+        # explode: если есть склады с qty>0 — по одному record на склад
+        if whs:
+            for w in whs:
+                qflags=[]
+                if not (w["qty"] and w["qty"]>0): qflags.append("no_qty")
+                rec=dict(
+                    supplier_id="kolobox",
+                    parser_id="kolobox_xls_v1",
+                    quality_flags=qflags,
+                    raw=dict(
+                        **base_raw,
+                        supplier_warehouse_name=w["supplier_warehouse_name"],
+                        qty=float(w["qty"]),
+                    ),
+                    _passthrough=dict(
+                        all_warehouses=whs,
+                        total_qty=float(total_qty),
+                    ),
+                    source_row_1based=r+1,
+                )
+                out.append(rec)
+                stats["rows_emitted"] += 1
+                if w["kind"]=="center": stats["emitted_center"] += 1
+                else: stats["emitted_city"] += 1
+                if len(sample)<5 and w["qty"]>0: sample.append(rec)
+        else:
+            # фиксируем "прайс есть, остатков нет": эмитим qty=0 на центр. склад (чтобы JOIN мог сработать при наличии alias)
+            rec=dict(
+                supplier_id="kolobox",
+                parser_id="kolobox_xls_v1",
+                quality_flags=["no_qty"],
+                raw=dict(
+                    **base_raw,
+                    supplier_warehouse_name=norm_wh("Центр. Склад"),
+                    qty=0.0,
+                ),
+                _passthrough=dict(
+                    all_warehouses=[],
+                    total_qty=0.0,
+                ),
+                source_row_1based=r+1,
+            )
+            out.append(rec)
+            stats["rows_emitted"] += 1
+            stats["emitted_no_qty"] += 1
 
-if __name__ == "__main__":
-    main()
+    return dict(
+        file=xls_path,
+        sheet=SHEET_NAME,
+        header_rows=HEADER_ROWS,
+        stats=stats,
+        sample_first_5_qty_gt0=sample,
+        records_emitted=len(out),
+    )
+
+if __name__=="__main__":
+    if len(sys.argv)!=2:
+        print("Usage: parser_komplektatsii_v1.py <path_to_xls>", file=sys.stderr)
+        sys.exit(2)
+    print(json.dumps(parse(sys.argv[1]), ensure_ascii=False, indent=2))
