@@ -1,53 +1,73 @@
-# SSOT v1.4a — Kolobox XLS mapping contract (v1)
-# Evidence basis: docs/ingestion/kolobox/evidence/*.evidence.json (commit 8a0e7d9...)
-version: "1.0"
-created_at: "2026-02-03"
-
+version: '1.0'
+created_at: '2026-02-03'
 globals:
-  schema: "ssot_ingestion"
-  supplier_id: "kolobox"
-  parser_id: "kolobox_xls_v1"
-  reserved_parser_ids: ["seed"]
-  sheet_name: "TDSheet"
+  schema: ssot_ingestion
+  supplier_id: kolobox
+  parser_id: kolobox_xls_v1
+  reserved_parser_ids:
+  - seed
+  sheet_name: TDSheet
   header_rows: 2
-  currency_default: "RUB"
-
-# Normalization rules for header/signature matching
+  currency_default: RUB
 signature:
   normalize:
     lower: true
     trim: true
     collapse_spaces: true
-
 layouts:
   diski_v1:
-    description: "Колобокс — Диски"
+    description: Колобокс — Диски
     cols_expected: 17
-    anchors_row1_must_contain: ["псд", "диаметр", "ширина", "цо", "вылет", "марка (бренд)", "наименование", "опт"]
-    anchors_row2_must_contain: ["цена", "остаток", "заказ"]
+    anchors_row1_must_contain:
+    - псд
+    - диаметр
+    - ширина
+    - цо
+    - вылет
+    - марка (бренд)
+    - наименование
+    - опт
+    anchors_row2_must_contain:
+    - цена
+    - остаток
+    - заказ
     columns:
-      # row1 labels + row2 semantics define the meaning; indexes are authoritative
-      supplier_article_col: 5        # c05 "Артикул"
-      supplier_code_1c_col: 6        # c06 "Код 1С"
-      brand_col: 7                   # c07 "Марка (бренд)"
-      name_col: 8                    # c08 "Наименование"
-      price_opt_col: 9               # c09 row2="Цена"
-      price_retail_col: 10           # c10 row2="Цена"
-      price_mic_or_cfr_col: 11       # c11 row2="Цена" (в дисках это "ЦФР" — НЕ считать базовой ценой)
-      warehouse_qty_cols: [13,14,15] # c13..c15 row2="Остаток"
-      order_col: 16                  # c16 row2="Заказ"
+      supplier_article_col: 5
+      supplier_code_1c_col: 6
+      brand_col: 7
+      name_col: 8
+      price_opt_col: 9
+      price_retail_col: 10
+      price_mic_or_cfr_col: 11
+      warehouse_qty_cols:
+      - 13
+      - 14
+      - 15
+      order_col: 16
     pricing_policy:
-      base_price: "price_opt_col"
-      also_capture: ["price_retail_col"]
-      ignore_as_price_for_p0: ["price_mic_or_cfr_col"]
+      base_price: price_opt_col
+      also_capture:
+      - price_retail_col
+      ignore_as_price_for_p0:
+      - price_mic_or_cfr_col
     qty_policy:
       qty_required: true
-
   komplektatsii_v1:
-    description: "Колобокс — Комплектации"
+    description: Колобокс — Комплектации
     cols_expected: 18
-    anchors_row1_must_contain: ["вид к-ции", "резьба", "длина общ", "марка (бренд)", "наименование", "опт", "розничная", "миц"]
-    anchors_row2_must_contain: ["цена", "остаток", "заказ"]
+    anchors_row1_must_contain:
+    - вид к-ции
+    - резьба
+    - длина общ
+    - марка (бренд)
+    - наименование
+    - опт
+    - розничная
+    - миц
+    anchors_row2_must_contain:
+    - цена
+    - остаток
+    - заказ
     columns:
       supplier_article_col: 6
       supplier_code_1c_col: 7
@@ -56,100 +76,180 @@ layouts:
       price_opt_col: 10
       price_retail_col: 11
       price_mic_col: 12
-      warehouse_qty_cols: [14,15,16]
+      warehouse_qty_cols:
+      - 14
+      - 15
+      - 16
       order_col: 17
     pricing_policy:
-      base_price: "price_opt_col"
-      also_capture: ["price_retail_col", "price_mic_col"]
+      base_price: price_opt_col
+      also_capture:
+      - price_retail_col
+      - price_mic_col
     qty_policy:
       qty_required: true
-
   shiny_v1:
-    description: "Колобокс — Шины (легковые)"
+    description: Колобокс — Шины (легковые)
     cols_expected: 21
-    anchors_row1_must_contain: ["размер", "ширина шины, мм", "профиль шины, %", "диаметр шины, дюйм", "сезонность", "шип.", "марка (бренд)", "наименование", "опт"]
-    anchors_row2_must_contain: ["цена", "остаток"]
+    anchors_row1_must_contain:
+    - размер
+    - ширина шины, мм
+    - профиль шины, %
+    - диаметр шины, дюйм
+    - сезонность
+    - шип.
+    - марка (бренд)
+    - наименование
+    - опт
+    anchors_row2_must_contain:
+    - цена
+    - остаток
     columns:
       supplier_article_col: 6
       supplier_code_1c_col: 7
       brand_col: 8
       name_col: 9
-      prepay_price_col: 10           # "Предоплата" row2="Цена" (не базовая цена)
-      price_opt_col: 11              # row2="Цена" (базовая цена)
-      percent_col: 12                # row2="%"
-      price_retail_col: 13           # row2="Цена"
-      price_mic_col: 14              # row2="Цена"
-      cfr_price_col: 15              # "ЦФР" row2="Цена" (не базовая цена)
-      warehouse_qty_cols: [17,18,19] # row2="Остаток"
-      order_col: 20                  # row2="Заказ"
+      prepay_price_col: 10
+      price_opt_col: 11
+      percent_col: 12
+      price_retail_col: 13
+      price_mic_col: 14
+      cfr_price_col: 15
+      warehouse_qty_cols:
+      - 17
+      - 18
+      - 19
+      order_col: 20
     pricing_policy:
-      base_price: "price_opt_col"
-      also_capture: ["price_retail_col", "price_mic_col"]
-      ignore_as_price_for_p0: ["prepay_price_col", "cfr_price_col"]
+      base_price: price_opt_col
+      also_capture:
+      - price_retail_col
+      - price_mic_col
+      ignore_as_price_for_p0:
+      - prepay_price_col
+      - cfr_price_col
     qty_policy:
       qty_required: true
-
   truck_v1:
-    description: "Колобокс — Шины грузовые"
+    description: Колобокс — Шины грузовые
     cols_expected: 16
-    anchors_row1_must_contain: ["размер", "ширина шины, мм", "профиль шины, %", "диаметр шины, дюйм", "сезонность", "шип.", "марка (бренд)", "наименование", "опт"]
-    anchors_row2_must_contain: ["цена", "%", "заказ"]
+    anchors_row1_must_contain:
+    - размер
+    - ширина шины, мм
+    - профиль шины, %
+    - диаметр шины, дюйм
+    - сезонность
+    - шип.
+    - марка (бренд)
+    - наименование
+    - опт
+    anchors_row2_must_contain:
+    - цена
+    - '%'
+    - заказ
     columns:
       supplier_article_col: 6
       supplier_code_1c_col: 7
       brand_col: 8
       name_col: 9
       price_opt_col: 10
-      percent_col: 11                # row2="%"
+      percent_col: 11
       price_retail_col: 12
       price_mic_col: 13
-      warehouse_qty_cols: []         # В evidence нет "Остаток"
+      warehouse_qty_cols: []
       order_col: 15
     pricing_policy:
-      base_price: "price_opt_col"
-      also_capture: ["price_retail_col", "price_mic_col"]
+      base_price: price_opt_col
+      also_capture:
+      - price_retail_col
+      - price_mic_col
     qty_policy:
       qty_required: false
-      note: "no qty columns in file; treat as SOFT for qty gates"
-
+      note: no qty columns in file; treat as SOFT for qty gates
 dispatch:
-  method: "anchor_match"
+  method: anchor_match
   rules:
-    - name: "komplektatsii"
-      layout: "komplektatsii_v1"
-      match:
-        row1_contains_all: ["вид к-ции", "резьба", "длина общ", "миц"]
-        cols_expected: 18
-    - name: "diski"
-      layout: "diski_v1"
-      match:
-        row1_contains_all: ["псд", "диаметр", "ширина", "цо", "вылет"]
-        cols_expected: 17
-    - name: "shiny"
-      layout: "shiny_v1"
-      match:
-        row1_contains_all: ["сезонность", "шип.", "предоплата", "цфр"]
-        cols_expected: 21
-    - name: "truck"
-      layout: "truck_v1"
-      match:
-        row1_contains_all: ["сезонность", "шип."]
-        row2_contains_all: ["%"]
-        cols_expected: 16
-
+  - name: komplektatsii
+    layout: komplektatsii_v1
+    match:
+      row1_contains_all:
+      - вид к-ции
+      - резьба
+      - длина общ
+      - миц
+      cols_expected: 18
+      signature_contains_all:
+      - вид к-ции
+      - резьба
+      - длина общ
+      - миц
+    header_rows: 2
+  - name: diski
+    layout: diski_v1
+    match:
+      row1_contains_all:
+      - псд
+      - диаметр
+      - ширина
+      - цо
+      - вылет
+      cols_expected: 17
+      signature_contains_all:
+      - псд
+      - диаметр
+      - ширина
+      - цо
+      - вылет
+    header_rows: 2
+  - name: shiny
+    layout: shiny_v1
+    match:
+      row1_contains_all:
+      - сезонность
+      - шип.
+      - предоплата
+      - цфр
+      cols_expected: 21
+      signature_contains_all:
+      - сезонность
+      - шип.
+      - предоплата
+      - цфр
+    header_rows: 2
+  - name: truck
+    layout: truck_v1
+    match:
+      row1_contains_all:
+      - сезонность
+      - шип.
+      row2_contains_all:
+      - '%'
+      cols_expected: 16
+      signature_contains_all:
+      - сезонность
+      - шип.
+      row2_signature_contains_all:
+      - '%'
+    header_rows: 2
 p0_gates:
-  # IMPORTANT: price gates must not treat "ЦФР"/"Предоплата" as base price.
-  - name: "rows_with_price_opt_gt_0"
-    action: "HARD_BLOCK"
-    applies_to_layouts: ["diski_v1", "komplektatsii_v1", "shiny_v1", "truck_v1"]
-    description: "At least one row must have base price (Опт) > 0."
-  - name: "rows_with_qty_gt_0_if_available"
-    action: "HARD_BLOCK"
-    applies_to_layouts: ["diski_v1", "komplektatsii_v1", "shiny_v1"]
-    description: "If qty columns exist, at least one row must have qty > 0."
-  - name: "no_qty_columns_soft_notice"
-    action: "SOFT_BLOCK"
-    applies_to_layouts: ["truck_v1"]
-    description: "No qty columns in file; requires operator review if this is expected."
-
-warehouse_alias_rule: "__unreviewed__:<warehouse_name_raw>"
+- name: rows_with_price_opt_gt_0
+  action: HARD_BLOCK
+  applies_to_layouts:
+  - diski_v1
+  - komplektatsii_v1
+  - shiny_v1
+  - truck_v1
+  description: At least one row must have base price (Опт) > 0.
+- name: rows_with_qty_gt_0_if_available
+  action: HARD_BLOCK
+  applies_to_layouts:
+  - diski_v1
+  - komplektatsii_v1
+  - shiny_v1
+  description: If qty columns exist, at least one row must have qty > 0.
+- name: no_qty_columns_soft_notice
+  action: SOFT_BLOCK
+  applies_to_layouts:
+  - truck_v1
+  description: No qty columns in file; requires operator review if this is expected.
+warehouse_alias_rule: __unreviewed__:<warehouse_name_raw>
