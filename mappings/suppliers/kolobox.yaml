@@ -7,7 +7,7 @@ format_hints:
   data_start_row_1based: 3
   sheet: "TDSheet"
 
-# Column index is 1-based (как в твоём json)
+# Column index is 1-based
 columns:
   article_primary:
     type: column_position
@@ -32,33 +32,34 @@ columns:
     target: brand
     priority: 200
 
-  # На старте берём одну цену детерминированно: "Опт / Цена" (col 11)
+  # P0 price policy: "Опт / Цена" = col 12 (row1=Опт, row2=Цена)
   price:
     type: column_position
-    column: 11
+    column: 12
     target: price
     priority: 200
 
 defaults:
   currency: "RUB"
 
-# Explode: одна входная строка -> N строк по складам, если qty не пустой.
-# warehouse_name берём из h1 (первая строка шапки), детерминированно по column asc.
+# Explode: одна входная строка -> N строк по складам
+# Остатки (qty) начинаются с col17..20 (row1: названия складов; row2: остаток)
 warehouses:
-  - column: 14
+  - column: 17
     warehouse_name: "Центр. Склад"
     qty_target: qty
-  - column: 15
+  - column: 18
     warehouse_name: "Саранск опт"
     qty_target: qty
-  - column: 16
+  - column: 19
     warehouse_name: "Тольятти опт(АХ)"
     qty_target: qty
-  - column: 17
+  - column: 20
     warehouse_name: "Уфа опт(Соединительное шоссе)"
     qty_target: qty
 
-ignore_columns: [1,2,3,4,5,6,12,13,18]
+# не используем на этапе P0: предоплата/проценты/розница/миц/цфр/размерные колонки
+ignore_columns: [1,2,3,4,5,6,11,13,14,15,16]
 notes:
-  - "col14 ведём как остаток (по фактическим значениям 4.0/1.0/>40)"
-  - "col12/13 (розница/миц) пока игнорируем, чтобы не плодить многомерную цену на этапе парсера"
+  - "col12 = Опт/Цена (основная цена P0)"
+  - "col17..20 = остатки по складам"
