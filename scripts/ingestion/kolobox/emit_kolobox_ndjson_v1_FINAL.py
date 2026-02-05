@@ -286,6 +286,11 @@ def main():
 
                     qty_int=parse_qty_soft(raw_qty,flags)
 
+
+                    # WBP: empty/zero qty warehouse is not a fact -> do not emit a line
+                    if qty_int is None or qty_int <= 0:
+                        continue
+
                     for fl in set(flags):
                         flags_counts[fl]=flags_counts.get(fl,0)+1
 
