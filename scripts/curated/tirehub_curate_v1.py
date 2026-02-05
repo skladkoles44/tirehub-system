@@ -3,156 +3,184 @@ import argparse, json, sys, hashlib
 from pathlib import Path
 from datetime import datetime, timezone
 
+CURATED_VERSION="1.1.0"
 EXIT_OK=0
-EXIT_ARGS=1
-EXIT_FAIL=2
+EXIT_FAIL=1
 
-def die(msg:str, code:int=EXIT_ARGS):
-    sys.stderr.write(msg+"\n")
-    sys.exit(code)
+REQUIRED_GOOD_FIELDS=[
+  "supplier_id","parser_id","mapping_version","mapping_hash","ndjson_contract_version",
+  "emitter_version","run_id","effective_at","sku_candidate_key","raw","parsed","quality_flags","_meta"
+]
+
+def die(msg:str,code:int=EXIT_FAIL):
+  sys.stderr.write(msg+"\n")
+  sys.exit(code)
 
 def jdump(obj:dict)->str:
-    return json.dumps(obj, ensure_ascii=False, sort_keys=True, separators=(",",":"))
-
-def load_json(p:Path)->dict:
-    try:
-        return json.loads(p.read_text(encoding="utf-8"))
-    except Exception as e:
-        die(f"JSON read/parse failed: {p} :: {e}", EXIT_FAIL)
-
-def parse_rfc3339_z(s:str)->datetime:
-    try:
-        dt=datetime.fromisoformat(s.replace("Z","+00:00"))
-        if dt.tzinfo is None:
-            raise ValueError("tz missing")
-        return dt.astimezone(timezone.utc)
-    except Exception as e:
-        die(f"Invalid RFC3339Z: {s} :: {e}", EXIT_ARGS)
+  return json.dumps(obj,ensure_ascii=False,sort_keys=True,separators=(",",":"))
 
 def sha256_file(p:Path)->str:
-    h=hashlib.sha256()
-    with p.open("rb") as f:
-        for chunk in iter(lambda: f.read(1024*1024), b""):
-            h.update(chunk)
-    return h.hexdigest()
+  h=hashlib.sha256()
+  with p.open("rb") as f:
+    for chunk in iter(lambda:f.read(1024*1024), b""):
+      h.update(chunk)
+  return h.hexdigest()
+
+def load_json(p:Path)->dict:
+  try:
+    return json.loads(p.read_text(encoding="utf-8"))
+  except Exception as e:
+    die(f"JSON read/parse failed: {p} :: {e}")
+
+def now_rfc3339z()->str:
+  return datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
+
+def validate_good(obj:dict)->bool:
+  for k in REQUIRED_GOOD_FIELDS:
+    if k not in obj: return False
+  if not isinstance(obj.get("parsed"), dict): return False
+  if not isinstance(obj.get("raw"), dict): return False
+  if not isinstance(obj.get("quality_flags"), list): return False
+  if not isinstance(obj.get("_meta"), dict): return False
+  return True
+
+def drop_reason(price, qty)->str:
+  reasons=[]
+  if price is None: reasons.append("price_missing")
+  elif isinstance(price,(int,float)) and price <= 0: reasons.append("price_nonpositive")
+  if qty is None: reasons.append("qty_missing")
+  elif isinstance(qty,(int,float)) and qty <= 0: reasons.append("qty_nonpositive")
+  return "_and_".join(reasons) if reasons else "unknown"
 
 def main():
-    ap=argparse.ArgumentParser("tirehub-curated v1 (WBP)")
-    ap.add_argument("--segment", required=True, help="SSOT facts segment .ndjson")
-    ap.add_argument("--manifest", required=True, help="SSOT manifest .json")
-    ap.add_argument("--out-dir", required=True, help="curated_v1/out")
-    ap.add_argument("--run-id", required=True)
-    args=ap.parse_args()
+  ap=argparse.ArgumentParser("tirehub-curated v1.1")
+  ap.add_argument("--manifest",required=True,help="path to SSOT manifest json")
+  ap.add_argument("--out-dir",required=False,default="curated_v1/out",help="base output dir")
+  ap.add_argument("--max-dropped-samples",type=int,default=50,help="cap for dropped_samples.ndjson (0 disables)")
+  args=ap.parse_args()
 
-    seg=Path(args.segment)
-    man=Path(args.manifest)
-    out_root=Path(args.out_dir)/args.run_id
-    if not seg.exists(): die(f"segment not found: {seg}", EXIT_ARGS)
-    if not man.exists(): die(f"manifest not found: {man}", EXIT_ARGS)
+  manifest_path=Path(args.manifest)
+  if not manifest_path.exists(): die(f"manifest not found: {manifest_path}")
 
-    manifest=load_json(man)
-    effective_at=manifest.get("effective_at")
-    if not isinstance(effective_at,str): die("manifest missing effective_at", EXIT_FAIL)
-    eff_dt=parse_rfc3339_z(effective_at)
+  manifest=load_json(manifest_path)
+  run_id=manifest.get("run_id")
+  paths=(manifest.get("paths") or {})
+  seg_path=paths.get("segment")
+  if not run_id or not seg_path: die("manifest missing run_id or paths.segment")
 
-    out_root.mkdir(parents=True, exist_ok=True)
-    curated_path=out_root/"curated.ndjson"
-    stats_path=out_root/"curated.stats.json"
-    stderr_path=out_root/"stderr.log"
+  segment_path=Path(seg_path)
+  if not segment_path.exists(): die(f"segment not found: {segment_path}")
 
-    # WBP: atomic write via tmp + rename
-    tmp_cur=out_root/"curated.ndjson.tmp"
-    tmp_stats=out_root/"curated.stats.json.tmp"
-    tmp_err=out_root/"stderr.log.tmp"
+  out_base=Path(args.out_dir)/run_id
+  out_base.mkdir(parents=True,exist_ok=True)
+  curated_path=out_base/"curated.ndjson"
+  dropped_path=out_base/"dropped_samples.ndjson"
+  stderr_path=out_base/"stderr.log"
+  stats_path=out_base/"curated.stats.json"
 
-    total_in=0
-    kept=0
-    dropped_price_or_qty=0
-    bad_json=0
-    bad_contract=0
+  curated_f=curated_path.open("w",encoding="utf-8",newline="\n")
+  dropped_f=dropped_path.open("w",encoding="utf-8",newline="\n")
+  stderr_f=stderr_path.open("w",encoding="utf-8",newline="\n")
 
-    # deterministic output ordering: as input (segment already deterministic)
-    with seg.open("r",encoding="utf-8") as f_in, tmp_cur.open("w",encoding="utf-8",newline="\n") as f_out, tmp_err.open("w",encoding="utf-8",newline="\n") as f_err:
-        for line in f_in:
-            total_in += 1
-            line=line.rstrip("\n")
-            if not line:
-                continue
-            try:
-                obj=json.loads(line)
-            except Exception:
-                bad_json += 1
-                continue
+  input_lines=0
+  kept_lines=0
+  dropped_price_or_qty=0
+  bad_json=0
+  bad_contract=0
+  drop_counts={}
+  dropped_samples_written=0
+  max_samples=max(0,int(args.max_dropped_samples))
 
-            # minimal contract checks (curated is consumer; fail-soft per-line, count)
-            try:
-                parsed=obj.get("parsed") or {}
-                price=parsed.get("price")
-                qty=parsed.get("qty")
-                if price is None or qty is None:
-                    dropped_price_or_qty += 1
-                    continue
-                if not isinstance(price,int) or not isinstance(qty,int):
-                    bad_contract += 1
-                    continue
-                if price <= 0 or qty <= 0:
-                    dropped_price_or_qty += 1
-                    continue
-            except Exception:
-                bad_contract += 1
-                continue
+  effective_at=None
 
-            # curated record: keep full fact for now (WBP: no business loss)
-            f_out.write(jdump(obj)+"\n")
-            kept += 1
+  with segment_path.open("r",encoding="utf-8") as f:
+    for line_no, line in enumerate(f, start=1):
+      line=line.rstrip("\n")
+      if not line: continue
+      input_lines += 1
+      try:
+        obj=json.loads(line)
+      except Exception:
+        bad_json += 1
+        continue
 
-        # echo summary into stderr log (WBP trace)
-        summary={
-            "run_id": args.run_id,
-            "curated_version": "1.0.0",
-            "effective_at": eff_dt.isoformat().replace("+00:00","Z"),
-            "segment_ref": str(seg),
-            "manifest_ref": str(man),
-            "counts":{
-                "input_lines": total_in,
-                "kept_lines": kept,
-                "dropped_price_or_qty": dropped_price_or_qty,
-                "bad_json": bad_json,
-                "bad_contract": bad_contract
-            }
+      if not validate_good(obj):
+        bad_contract += 1
+        continue
+
+      if effective_at is None:
+        effective_at = obj.get("effective_at")
+
+      parsed=obj.get("parsed") or {}
+      price=parsed.get("price")
+      qty=parsed.get("qty")
+
+      # eligibility: price>0 AND qty>0
+      ok = (isinstance(price,int) and price>0) and (isinstance(qty,int) and qty>0)
+      if ok:
+        curated_f.write(jdump(obj)+"\n")
+        kept_lines += 1
+        continue
+
+      dropped_price_or_qty += 1
+      r=drop_reason(price,qty)
+      drop_counts[r]=int(drop_counts.get(r,0))+1
+
+      if max_samples>0 and dropped_samples_written < max_samples:
+        raw=obj.get("raw") or {}
+        sample={
+          "run_id": obj.get("run_id"),
+          "seg_line_no": line_no,
+          "_meta": {"source_row_number": (obj.get("_meta") or {}).get("source_row_number")},
+          "sku_candidate_key": obj.get("sku_candidate_key"),
+          "supplier_warehouse_name": raw.get("supplier_warehouse_name"),
+          "parsed": {"price": price, "qty": qty},
+          "quality_flags": obj.get("quality_flags") or [],
+          "drop_reason": r,
+          "raw_snapshot": {
+            "price_raw": raw.get("price_raw"),
+            "qty_raw": raw.get("qty_raw"),
+          },
         }
-        f_err.write(jdump(summary)+"\n")
+        dropped_f.write(jdump(sample)+"\n")
+        dropped_samples_written += 1
 
-    stats={
-        "run_id": args.run_id,
-        "curated_version": "1.0.0",
-        "effective_at": eff_dt.isoformat().replace("+00:00","Z"),
-        "inputs":{
-            "segment": str(seg),
-            "manifest": str(man),
-            "segment_sha256": sha256_file(seg),
-            "manifest_sha256": sha256_file(man)
-        },
-        "outputs":{
-            "curated": str(curated_path),
-            "stderr_log": str(stderr_path)
-        },
-        "counts":{
-            "input_lines": total_in,
-            "kept_lines": kept,
-            "dropped_price_or_qty": dropped_price_or_qty,
-            "bad_json": bad_json,
-            "bad_contract": bad_contract
-        }
-    }
+  curated_f.close(); dropped_f.close(); stderr_f.close()
 
-    tmp_stats.write_text(jdump(stats)+"\n", encoding="utf-8")
-    tmp_cur.replace(curated_path)
-    tmp_stats.replace(stats_path)
-    tmp_err.replace(stderr_path)
+  manifest_sha=sha256_file(manifest_path)
+  segment_sha=sha256_file(segment_path)
 
-    sys.stderr.write(jdump(stats)+"\n")
-    sys.exit(EXIT_OK)
+  out={
+    "run_id": run_id,
+    "curated_version": CURATED_VERSION,
+    "effective_at": effective_at,
+    "counts": {
+      "input_lines": input_lines,
+      "kept_lines": kept_lines,
+      "dropped_price_or_qty": dropped_price_or_qty,
+      "bad_json": bad_json,
+      "bad_contract": bad_contract,
+      "dropped_samples_written": dropped_samples_written,
+    },
+    "drop_counts": drop_counts,
+    "inputs": {
+      "manifest": str(manifest_path),
+      "manifest_sha256": manifest_sha,
+      "segment": str(segment_path),
+      "segment_sha256": segment_sha,
+    },
+    "outputs": {
+      "curated": str(curated_path),
+      "dropped_samples": str(dropped_path),
+      "stderr_log": str(stderr_path),
+    },
+    "ingested_at": now_rfc3339z(),
+  }
+
+  stats_path.write_text(jdump(out)+"\n",encoding="utf-8")
+  stderr_path.write_text(jdump(out)+"\n",encoding="utf-8")
+  sys.stderr.write(jdump(out)+"\n")
+  sys.exit(EXIT_OK)
 
 if __name__=="__main__":
-    main()
+  main()
