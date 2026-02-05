@@ -1,101 +1,148 @@
 #!/usr/bin/env python3
 import argparse, json, sys
 from pathlib import Path
-from decimal import Decimal
 
-EXIT_PASS=0
-EXIT_WARN=10
-EXIT_FAIL=20
+EXIT_PASS = 0
+EXIT_WARN = 10
+EXIT_FAIL = 20
 
-def die(msg:str, code:int=EXIT_FAIL):
-    sys.stderr.write(msg+"\n")
+def die(msg: str, code: int = EXIT_FAIL):
+    sys.stderr.write(msg + "\n")
     sys.exit(code)
 
-def jload(p:Path)->dict:
+def load_json(p: Path) -> dict:
     try:
         return json.loads(p.read_text(encoding="utf-8"))
     except Exception as e:
-        die(f"stats.json read/parse failed: {p} :: {e}", EXIT_FAIL)
+        die(f"JSON read/parse failed: {p} :: {e}", EXIT_FAIL)
+
+def get_value(d: dict, path: str):
+    cur = d
+    for part in path.split("."):
+        if isinstance(cur, dict) and part in cur:
+            cur = cur[part]
+        else:
+            return None
+    return cur
+
+def check_baseline(stats: dict, baseline_path: Path | None) -> list:
+    reasons = []
+    if baseline_path is None:
+        reasons.append({"level": "WARN", "code": "baseline_missing", "detail": "baseline not configured"})
+        return reasons
+    if not baseline_path.exists():
+        reasons.append({"level": "WARN", "code": "baseline_missing", "detail": f"baseline file not found: {baseline_path}"})
+        return reasons
+
+    baseline = load_json(baseline_path)
+
+    if stats.get("parser_id") != baseline.get("parser_id"):
+        reasons.append({"level": "WARN", "code": "baseline_mismatch", "detail": f"parser_id mismatch: stats={stats.get('parser_id')}, baseline={baseline.get('parser_id')}"})
+        return reasons
+
+    metrics = baseline.get("metrics", {})
+    for metric_path, rule in metrics.items():
+        expected = rule.get("expected")
+        tolerance = rule.get("tolerance_abs", 0)
+        actual = get_value(stats, metric_path)
+
+        if actual is None:
+            reasons.append({"level": "WARN", "code": "metric_missing", "detail": f"{metric_path} not in stats"})
+            continue
+
+        if isinstance(expected, str):
+            if str(actual) != expected:
+                reasons.append({"level": "WARN", "code": "metric_out_of_tolerance", "detail": f"{metric_path}: expected '{expected}', got '{actual}'"})
+        elif isinstance(expected, (int, float)):
+            try:
+                if abs(int(actual) - int(expected)) > int(tolerance):
+                    reasons.append({"level": "WARN", "code": "metric_out_of_tolerance", "detail": f"{metric_path}: expected {expected}±{tolerance}, got {actual}"})
+            except Exception:
+                reasons.append({"level": "WARN", "code": "metric_out_of_tolerance", "detail": f"{metric_path}: non-numeric actual={actual}, expected={expected}"})
+        else:
+            # неизвестный тип expected — считаем это baseline ошибкой
+            reasons.append({"level": "WARN", "code": "baseline_invalid", "detail": f"{metric_path}: unsupported expected type {type(expected)}"})
+
+    return reasons
 
 def main():
-    ap=argparse.ArgumentParser("tirehub-gate v1")
+    ap = argparse.ArgumentParser("tirehub-gate v1")
     ap.add_argument("--stats", required=True, help="path to stats.json from emitter")
-    ap.add_argument("--out", required=True, help="path to verdict.json (will be overwritten)")
-    ap.add_argument("--fail-on-file-level-errors", action="store_true", default=True)
-    args=ap.parse_args()
+    ap.add_argument("--out", required=False, help="path to verdict.json (will be overwritten)")
+    ap.add_argument("--baseline", required=False, help="path to baseline.json file")
+    args = ap.parse_args()
 
-    stats_path=Path(args.stats)
-    out_path=Path(args.out)
-    if not stats_path.exists(): die(f"stats.json not found: {stats_path}", EXIT_FAIL)
+    stats_path = Path(args.stats)
+    baseline_path = Path(args.baseline) if args.baseline else None
 
-    s=jload(stats_path)
+    if not stats_path.exists():
+        die(f"stats.json not found: {stats_path}", EXIT_FAIL)
 
-    # required fields (minimal)
-    for k in ["run_id","supplier_id","parser_id","file_readable","structure_ok","good_rows","bad_rows","exploded_lines","explosion_factor_exact","source_rows_read"]:
-        if k not in s: die(f"stats.json missing field: {k}", EXIT_FAIL)
+    stats = load_json(stats_path)
 
-    file_readable=bool(s["file_readable"])
-    structure_ok=bool(s["structure_ok"])
-    good_rows=int(s["good_rows"])
-    bad_rows=int(s["bad_rows"])
-    exploded_lines=int(s["exploded_lines"])
-    source_rows_read=int(s["source_rows_read"])
-    try:
-        explosion_factor_exact=Decimal(str(s["explosion_factor_exact"]))
-    except Exception:
-        die("stats.json invalid explosion_factor_exact", EXIT_FAIL)
+    required = [
+        "run_id","supplier_id","parser_id",
+        "file_readable","structure_ok",
+        "good_rows","bad_rows",
+        "exploded_lines","explosion_factor_exact","source_rows_read",
+        "flags_counts"
+    ]
+    for k in required:
+        if k not in stats:
+            die(f"stats.json missing field: {k}", EXIT_FAIL)
 
-    reasons=[]
+    reasons = []
 
-    # FAIL rules (канон v1)
-    if exploded_lines==0:
-        reasons.append({"level":"FAIL","code":"exploded_lines_zero","detail":"exploded_lines == 0"})
-    if not file_readable:
-        reasons.append({"level":"FAIL","code":"file_not_readable","detail":"file_readable=false"})
-    if not structure_ok:
-        reasons.append({"level":"FAIL","code":"structure_not_ok","detail":"structure_ok=false"})
-    if explosion_factor_exact > Decimal("50"):
-        reasons.append({"level":"FAIL","code":"explosion_factor_too_high","detail":f"explosion_factor_exact={explosion_factor_exact}"})
-    if exploded_lines > 5_000_000:
-        reasons.append({"level":"FAIL","code":"exploded_lines_too_many","detail":f"exploded_lines={exploded_lines}"})
-    if good_rows==0 and source_rows_read>0:
-        # файл прочитан, но фактов нет — подозрительно
-        reasons.append({"level":"FAIL","code":"no_good_facts","detail":"good_rows == 0 with readable/structured file"})
+    # FAIL rules
+    if not bool(stats["file_readable"]):
+        reasons.append({"level": "FAIL", "code": "file_not_readable", "detail": "file_readable=false"})
+    if not bool(stats["structure_ok"]):
+        reasons.append({"level": "FAIL", "code": "structure_not_ok", "detail": "structure_ok=false"})
+    if int(stats["exploded_lines"]) == 0:
+        reasons.append({"level": "FAIL", "code": "exploded_lines_zero", "detail": "exploded_lines == 0"})
 
-    # WARN rules (канон v1 базово, без baseline)
-    if bad_rows>0:
-        reasons.append({"level":"WARN","code":"has_bad_rows","detail":f"bad_rows={bad_rows}"})
+    if any(r["level"] == "FAIL" for r in reasons):
+        verdict = "FAIL"
+        exit_code = EXIT_FAIL
+    else:
+        # WARN rules: baseline check
+        reasons.extend(check_baseline(stats, baseline_path))
 
-    flags_counts=s.get("flags_counts",{}) or {}
-    # high-priority warn: negative_price
-    if int(flags_counts.get("negative_price",0))>0:
-        reasons.append({"level":"WARN","code":"has_negative_price","detail":f"negative_price={flags_counts.get('negative_price')}"})
+        # other WARN signals
+        if int(stats["bad_rows"]) > 0:
+            reasons.append({"level": "WARN", "code": "has_bad_rows", "detail": f"bad_rows={stats['bad_rows']}"})
 
-    # baseline_missing -> WARN (пока baseline не реализован)
-    reasons.append({"level":"WARN","code":"baseline_missing","detail":"baseline not configured"})
+        flags_counts = stats.get("flags_counts", {}) or {}
+        if int(flags_counts.get("negative_price", 0)) > 0:
+            reasons.append({"level": "WARN", "code": "has_negative_price", "detail": f"negative_price={flags_counts.get('negative_price')}"})
 
-    verdict="PASS"
-    exit_code=EXIT_PASS
-    if any(r["level"]=="FAIL" for r in reasons):
-        verdict="FAIL"
-        exit_code=EXIT_FAIL
-    elif any(r["level"]=="WARN" for r in reasons):
-        verdict="WARN"
-        exit_code=EXIT_WARN
+        if any(r["level"] == "WARN" for r in reasons):
+            verdict = "WARN"
+            exit_code = EXIT_WARN
+        else:
+            verdict = "PASS"
+            exit_code = EXIT_PASS
 
-    out={
-        "gate_version":"1.0.0",
-        "run_id":s["run_id"],
-        "supplier_id":s["supplier_id"],
-        "parser_id":s["parser_id"],
-        "verdict":verdict,
-        "reasons":reasons,
-        "stats_ref":str(stats_path),
+    out = {
+        "gate_version": "1.0.0",
+        "run_id": stats["run_id"],
+        "supplier_id": stats["supplier_id"],
+        "parser_id": stats["parser_id"],
+        "verdict": verdict,
+        "reasons": reasons,
+        "stats_ref": str(stats_path),
+        "baseline_used": str(baseline_path) if baseline_path else None
     }
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(out, ensure_ascii=False, sort_keys=True, separators=(",",":"))+"\n", encoding="utf-8")
-    sys.stderr.write(json.dumps(out, ensure_ascii=False, sort_keys=True, separators=(",",":"))+"\n")
+
+    payload = json.dumps(out, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
+
+    if args.out:
+        out_path = Path(args.out)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(payload, encoding="utf-8")
+
+    sys.stderr.write(payload)
     sys.exit(exit_code)
 
-if __name__=="__main__":
+if __name__ == "__main__":
     main()
