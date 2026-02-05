@@ -89,7 +89,7 @@ def parse_qty_soft(raw_qty:str,flags:list):
         flags.append("no_qty")
         # WBP: пустой/нулевой склад не является фактом наличия → строку не пишем
         # price_missing при qty>0 НЕ режем — это другой кейс
-        continue
+        return  # patched: was 'continue' outside loop; skip emitting this warehouse/line
         return None
     s=raw_qty
     try:
