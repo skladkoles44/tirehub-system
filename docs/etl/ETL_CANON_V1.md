@@ -1,170 +1,129 @@
-# ETL CANON v1 — NDJSON-first + SSOT
+ETL CANON V1 (SSOT / Marketplace-ready)
 
-## 0. Назначение
-Каноническая спецификация промышленного ETL-контура. Документ обязателен для разработки, аудита и эксплуатации. Любое отклонение считается дефектом.
+Назначение
+Контур предназначен для приёма прайс-листов поставщиков, фиксации фактов «что поставщик прислал» без бизнес-эвристик и построения витрины только поверх проверенных и валидных данных. SSOT является журналом фактов, а не «актуальным состоянием».
 
----
+1. Общие принципы
+Система построена по модели: Emitter → Gate → Ingestion → Curated / Offers.
+NDJSON-first. Каждая строка — атомарный факт.
+Emitter не принимает бизнес-решений и ничего не «исправляет».
+Gate решает, можно ли писать в SSOT.
+Ingestion фиксирует данные навсегда.
+Curated / Offers — единственное место бизнес-логики.
 
-## 1. Архитектурный принцип
-Контур: Emitter → Gate → Ingestion → Curated / Offers  
-SSOT — журнал фактов. Бизнес-логика запрещена до Curated.
+2. Термины
+parser_id — идентификатор логики парсинга: поставщик + формат/лейаут + логика emitter. Любой breaking change контракта или алгоритма = новый parser_id.
+mapping_schema_version — версия схемы mapping.yaml (ключ version в YAML).
+mapping_version — версия конкретного mapping-файла как артефакта. Меняется при любом изменении содержимого.
+ndjson_contract_version — версия структуры NDJSON. Breaking change требует нового ndjson_contract_version и нового parser_id.
+effective_at — момент актуальности данных, задаётся оркестратором.
+SSOT — append-only журнал фактов.
 
----
+3. Emitter
+Вход: файл поставщика + mapping.yaml.
+Поддержка v1: только XLS через xlrd 1.2.0. Любая проблема чтения файла — CRITICAL лог + exit code != 0.
+Оркестратор обязан задавать effective_at в формате RFC3339: YYYY-MM-DDTHH:MM:SSZ. Если не задан — используется run_start_utc (одно значение на прогон).
+Emitter нормализует строки источников SKU: Unicode NFKC, удаление zero-width символов, trim, collapse whitespace.
+Emitter не делает дедупликацию, не фильтрует строки по бизнес-правилам.
+Полностью пустые строки (все сопоставленные поля пусты) пропускаются, не попадают в NDJSON, но учитываются в stats-out как skipped_rows_all_empty.
+Emitter формирует stats-out (JSON) с метриками прогона, но не знает «новизну» складов — он только фиксирует найденные имена.
+Emitter вычисляет sku_candidate_key, parsed.price, parsed.qty, выставляет флаги.
 
-## 2. Emitter
+4. Mapping
+Источник правды по колонкам, листам, строкам и складам.
+Расположение: mappings/suppliers/{supplier_id}/*.yaml.
+Mapping содержит: format_hints (file_type, sheet, header_row_1based, data_start_row_1based), columns, warehouses, header_probe.
+header_row_offset считается от data_start_row_1based: target_row = data_start_row_1based + offset.
+header_probe обязателен минимум в двух колонках; mismatch = FAIL в Gate.
+Mapping не содержит бизнес-логики.
+Любое изменение mapping-файла требует увеличения mapping_version.
 
-### 2.1 Ответственность
-- Чтение входного файла (v1: только XLS, xlrd==1.2.0)
-- Применение mapping.yaml
-- Генерация NDJSON
-- Фиксация проблем через flags
-- Никаких бизнес-решений
+5. NDJSON контракт
+Каждая строка содержит: supplier_id, parser_id, mapping_version, ndjson_contract_version, emitter_version, run_id, effective_at, sku_candidate_key, raw, parsed, quality_flags, _meta.
+effective_at — строка строго RFC3339 с Z.
+currency не включается: валюта всегда RUB.
+parsed.price — целое число в копейках или null. ROUND_HALF_UP.
+parsed.qty — целое число или null.
+Источники price_raw и qty_raw сохраняются в raw.
+supplier_warehouse_name в raw опционален.
 
-### 2.2 effective_at
-- Обязательный ISO 8601 / RFC3339: `YYYY-MM-DDTHH:MM:SSZ`
-- Если не задан → CRITICAL ошибка
-- Оркестратор обязан задавать один effective_at на логический раунд
-- Ретраи обязаны сохранять original effective_at
+6. Флаги качества
+Флаги не каскадируются, порядок проверки фиксирован.
+price_textual, negative_price, zero_price, missing_price.
+qty_textual, qty_fractional, negative_qty, missing_qty.
+Диапазоны: price 100..10_000_000 коп., qty 0..100_000; выход за диапазон = WARN.
+negative_price — WARN всегда, даже одна строка, как индикатор системной ошибки.
+negative_price_share > 1% — FAIL.
 
-### 2.3 Ошибки
-Любая ошибка чтения/парсинга:
-- CRITICAL лог
-- exit code ≠ 0
-
-### 2.4 Пустые строки
-- Строки, где все mapped-поля пусты → SKIP
-- В NDJSON не пишутся
-- Учитываются только в stats-out: skipped_rows_all_empty
-- exploded_lines == 0 → Gate FAIL
-
-### 2.5 Нормализация SKU
-- Unicode NFKC
-- Удаление zero-width
-- trim + collapse whitespace
-- Без эвристик (/, -, спецсимволы не трогаем)
-
----
-
-## 3. Mapping
-
-### 3.1 Общие правила
-- `version` = mapping_schema_version
-- `mapping_version` обязателен и монотонен (контролируется CI)
-- Любое изменение → новый mapping_version
-
-### 3.2 header_row_offset
-- Смещение от data_start_row_1based
-- target_row = data_start_row_1based + offset
-- Отрицательное = выше данных
-
-### 3.3 header_probe (опционально)
-```yaml
-header_probe:
-  - {row: 1, column: 1, expected: "Артикул", match: "exact"}
-  - {row: 1, column: 2, expected: "Бренд", match: "exact"}
-Минимум 2 точки
-mismatch → Gate FAIL
-4. NDJSON контракт
-Копировать код
-Json
-{
-  "ndjson_contract_version": "1.0",
-  "supplier_id": "...",
-  "parser_id": "...",
-  "mapping_version": "...",
-  "mapping_hash": "sha256",
-  "run_id": "...",
-  "effective_at": "2026-02-04T10:15:00Z",
-  "sku_candidate_key": "...",
-  "raw": {
-    "supplier_article": "...",
-    "price_raw": "...",
-    "qty_raw": "...",
-    "supplier_warehouse_name": "..."
-  },
-  "parsed": {
-    "price": 123456,
-    "qty": 10
-  },
-  "quality_flags": [],
-  "_meta": {
-    "source_row_number": 1
-  }
-}
-currency отсутствует: всегда RUB
-price → копейки, Decimal, ROUND_HALF_UP
-qty → int или null
-source_row_number → 1-based
-5. Quality Flags
-FAIL:
-bad_json
-bad_qty
-qty_fractional
-negative_qty
-WARN:
-missing_price
-price_textual
-zero_price
-negative_price
-warehouse_name_empty
-qty_zero
-price_out_of_range
-qty_out_of_range
-INFO:
-price_fractional_discarded
-Флаги не каскадируются. Первый по приоритету.
-6. Gate
+7. Gate
+Gate работает до записи в SSOT.
 FAIL если:
-exploded_lines == 0
-bad_json > 0
-qty_fractional > 0
-negative_qty > 0
-explosion_factor_exact > 50
-exploded_lines > 5_000_000
-unique_sku_count > 50_000
-total_lines < 0.7 × baseline (если baseline есть)
-WARN:
-negative_price > 0 (high-priority)
-missing_price > 5%
-new_warehouses_count > 3
-data_density < 0.1
-baseline_missing → WARN
-7. Ingestion
-7.1 Принципы
-SSOT = append-only журнал
-Уникальности нет
-Дубликаты допустимы
-7.2 Склады
-normalized_name = normalize(raw.supplier_warehouse_name)
-Если пусто → warehouse_key="unreviewed:{supplier_id}"
-В warehouse_aliases запрещён normalized_name=""
-История не переписывается
-7.3 Идемпотентность
-run_id уникален
-distributed lock на run_id
-Повтор → очистка незасиленного snapshot
-8. Curated / Offers
-Оффер создаётся если:
-parsed.price > 0
-parsed.qty > 0
-snapshot PASS/WARN или forced
-unreviewed / hold → офферы запрещены
-9. Версионирование
-breaking NDJSON → новый ndjson_contract_version И новый parser_id
-смена библиотеки / логики → новый parser_id
-mapping правки → новый mapping_version
-10. Hardening (обязательно v1)
-max_file_bytes = 100MB
-max_rows = 65000
-max_cols = 256
-max_warehouses = 64
-explosion_factor FAIL > 50
-11. Monitoring
-отсутствие прогонов >24ч считается от последнего PASS/WARN
-explosion_factor в UI округлён, проверки — по exact
-алерты по трендам (degradation)
-12. Границы ответственности
-Emitter фиксирует факты
-Gate решает допуск
-Ingestion хранит
-Curated думает
+– bad_json > 0
+– qty_fractional / negative_qty > 0
+– exploded_lines == 0
+– total_lines < 0.7 × baseline.total_lines (если baseline есть)
+– explosion_factor_exact > 50
+– exploded_lines > 5_000_000
+– header_probe_mismatch
+– collisions_share > 0.1%
+WARN если:
+– negative_price > 0
+– missing_price > 5%
+– missing_sku > 1%
+– data_density < 0.1
+– new_warehouses_count > 3 или доля > 10%
+Baseline — зафиксированный эталон, обновляется только вручную.
+Если baseline отсутствует — baseline_missing = WARN, но exploded_lines == 0 всё равно FAIL.
+
+8. Ingestion
+SSOT — append-only. Бизнес-уникальности нет. Дубликаты допустимы.
+warehouse_key фиксируется в момент ingestion и не меняется задним числом.
+Маппинг складов:
+– нормализация имени
+– поиск в warehouse_aliases по (supplier_id, normalized_name)
+– не найдено или имя пустое → warehouse_key = "unreviewed:{supplier_id}"
+В warehouse_aliases запрещён normalized_name = "".
+run_id уникален. Параллельный ingestion одного run_id запрещён.
+Повторный запуск с тем же run_id очищает незасиленный snapshot и пишет заново.
+
+9. Curated / Offers
+Обрабатывает только снапшоты, прошедшие Ingestion (включая force-ingest).
+Условие оффера: parsed.price > 0 и parsed.qty > 0, нет FAIL-флагов.
+unreviewed и hold склады не создают офферы.
+Дедупликация и выбор актуального предложения — только здесь.
+
+10. Версионирование
+Новый parser_id требуется при:
+– изменении алгоритмов
+– смене библиотеки чтения
+– изменении ndjson_contract_version
+– изменении обязательных полей NDJSON
+Новый mapping_version — при любом изменении mapping-файла.
+CI обязан блокировать merge, если mapping_hash изменился, а mapping_version нет.
+
+11. Force-ingest
+force_ingest:true и force_reason фиксируются в метаданных snapshot.
+Доступ только для админов.
+Все случаи логируются и алертятся.
+
+12. Мониторинг
+Отсчёт «нет прогонов >24ч» — от последнего PASS/WARN per parser_id.
+explosion_factor отображается округлённым, но проверки используют точное значение.
+Тренды деградации отслеживаются по окнам.
+
+13. Hardening v1
+Лимиты до парсинга: размер файла, строки, колонки, склады.
+Unicode-нормализация SKU обязательна.
+Лимит уникальных SKU за прогон.
+Distributed lock на run_id.
+Rate limiting по supplier_id.
+Chaos-тесты регулярно.
+
+14. Граница ответственности
+Emitter фиксирует реальность.
+Gate — качество.
+Ingestion — история.
+Curated — бизнес.
+SKU-семантика, антидемпинг, ценовые гварды — вне ingestion.
+
+Это канон v1. Он предназначен для стабильности, аудита и предсказуемости, а не для «умного исправления» данных.
