@@ -46,8 +46,10 @@ def validate_good(obj:dict)->bool:
 
 def drop_reason(price, qty)->str:
   reasons=[]
-  if price is None: reasons.append("price_missing")
-  elif isinstance(price,(int,float)) and price <= 0: reasons.append("price_nonpositive")
+  # WBP v2: не дропаем факт из-за отсутствия цены (qty>0 уже отфильтрован в emitter)
+  pass  # price_missing -> quality only
+  # WBP v2: не дропаем факт из-за цены<=0 (если такое встретится)
+  pass  # price_nonpositive -> quality only
   if qty is None: reasons.append("qty_missing")
   elif isinstance(qty,(int,float)) and qty <= 0: reasons.append("qty_nonpositive")
   return "_and_".join(reasons) if reasons else "unknown"
