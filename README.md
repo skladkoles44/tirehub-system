@@ -1,4 +1,16 @@
+# tirehub-system
 
-ETL Canon v1
-Канонический контракт ETL: артефакты, инварианты, статусы, детерминизм/воспроизводимость.
-См. docs/etl/ETL_CANON_V1.# tirehub-system
+ETL-система для приёма прайс-листов поставщиков и построения витрины поверх проверенных данных.  
+Ключевой принцип: SSOT (append-only) + NDJSON-first, бизнес-логика только в Curated/Offers.
+
+## Docs
+- **ETL Canon v1 (обязателен)**: [docs/etl/ETL_CANON_V1.md](docs/etl/ETL_CANON_V1.md)
+
+## Architecture
+Emitter → Gate → Ingestion → Curated / Offers
+
+## Repo layout (WIP)
+- `docs/` — спецификации и контракты
+- `mappings/` — mapping-файлы поставщиков
+- `inputs/` — входные файлы (локально/не коммитить)
+- `out/` — артефакты прогонов (локально/не коммитить)
