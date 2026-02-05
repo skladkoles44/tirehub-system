@@ -117,8 +117,8 @@ def main():
       price=parsed.get("price")
       qty=parsed.get("qty")
 
-      # eligibility: price>0 AND qty>0
-      ok = (isinstance(price,int) and price>0) and (isinstance(qty,int) and qty>0)
+      # eligibility: qty>0 (price may be missing; that is quality-only)
+      ok = (isinstance(qty,int) and qty>0)
       if ok:
         curated_f.write(jdump(obj)+"\n")
         kept_lines += 1
