@@ -1,1 +1,12 @@
-{"baseline_version":"1.0.0","parser_id":"kolobox_xls_v1","metrics":{"good_rows":{"expected":10980,"tolerance_abs":0},"bad_rows":{"expected":0,"tolerance_abs":0},"source_rows_read":{"expected":2745,"tolerance_abs":0},"exploded_lines":{"expected":10980,"tolerance_abs":0},"explosion_factor_exact":{"expected":"4","tolerance_abs":0},"flags_counts.no_qty":{"expected":7045,"tolerance_abs":0},"flags_counts.qty_approximated":{"expected":517,"tolerance_abs":0},"flags_counts.missing_price":{"expected":84,"tolerance_abs":0}}}
+{
+  "baseline_version": "1.0",
+  "parser_id": "kolobox_xls_v1",
+  "notes": "v2: skip empty/zero-qty warehouses at source; keep price_missing when qty>0",
+  "metrics": {
+    "source_rows_read": {"expected": 2745, "tolerance_abs": 0},
+    "good_rows": {"expected": 3935, "tolerance_abs": 0},
+    "exploded_lines": {"expected": 3935, "tolerance_abs": 0},
+    "explosion_factor_exact": {"expected": "1.433515482695810564663023679"},
+    "flags_counts.missing_price": {"expected": 21, "tolerance_abs": 0}
+  }
+}
