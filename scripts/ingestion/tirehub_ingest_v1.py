@@ -61,10 +61,15 @@ def release_lock(lock_path: Path):
     pass
 
 def parse_effective_month(effective_at: str) -> str:
-  # expects RFC3339Z like 2026-02-04T10:15:00Z
-  if len(effective_at) < 7 or effective_at[4] != "-" or effective_at[7:8] not in ["T",""]:
-    die(f"Invalid effective_at format (need RFC3339Z): {effective_at}", EXIT_FAIL)
-  return effective_at[:7]  # YYYY-MM
+  # RFC3339Z -> YYYY-MM
+  try:
+    dt = datetime.fromisoformat(effective_at.replace("Z","+00:00"))
+    if dt.tzinfo is None:
+      raise ValueError("tzinfo missing")
+    dt = dt.astimezone(timezone.utc)
+    return f"{dt.year:04d}-{dt.month:02d}"
+  except Exception as e:
+    die(f"Invalid effective_at format (need RFC3339Z): {effective_at} :: {e}", EXIT_FAIL)
 
 def validate_good_line(obj: dict, expected: dict):
   for k in REQUIRED_GOOD_FIELDS:
