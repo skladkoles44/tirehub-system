@@ -1,12 +1,39 @@
 {
   "baseline_version": "1.0",
-  "parser_id": "kolobox_xls_v1",
-  "notes": "v2: skip empty/zero-qty warehouses at source; keep price_missing when qty>0",
+  "expected": {
+    "exploded_lines": 3935,
+    "good_rows": 3935,
+    "price_source_counts": {
+      "cfr": 21,
+      "none": 0,
+      "opt": 3914
+    }
+  },
+  "flags_counts": {
+    "missing_price": 0,
+    "price_from_cfr": 21
+  },
   "metrics": {
-    "source_rows_read": {"expected": 2745, "tolerance_abs": 0},
-    "good_rows": {"expected": 3935, "tolerance_abs": 0},
-    "exploded_lines": {"expected": 3935, "tolerance_abs": 0},
-    "explosion_factor_exact": {"expected": "1.433515482695810564663023679"},
-    "flags_counts.missing_price": {"expected": 21, "tolerance_abs": 0}
-  }
+    "exploded_lines": {
+      "expected": 3935,
+      "tolerance_abs": 0
+    },
+    "explosion_factor_exact": {
+      "expected": "1.433515482695810564663023679"
+    },
+    "flags_counts.missing_price": {
+      "expected": 21,
+      "tolerance_abs": 0
+    },
+    "good_rows": {
+      "expected": 3935,
+      "tolerance_abs": 0
+    },
+    "source_rows_read": {
+      "expected": 2745,
+      "tolerance_abs": 0
+    }
+  },
+  "notes": "v2: skip empty/zero-qty warehouses at source; keep price_missing when qty>0",
+  "parser_id": "kolobox_xls_v1"
 }
