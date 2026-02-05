@@ -1,13 +1,11 @@
-version: "1.0"
+mapping_schema_version: "1.0"
+mapping_version: "3"
 supplier: "Kolobox"
-
 format_hints:
   header_row_1based: 1
   subheader_row_1based: 2
   data_start_row_1based: 3
   sheet: "TDSheet"
-
-# Column index is 1-based
 columns:
   article_primary:
     type: column_position
@@ -19,31 +17,24 @@ columns:
     column: 8
     target: article
     priority: 150
-
   name:
     type: column_position
     column: 10
     target: name
     priority: 200
-
   brand:
     type: column_position
     column: 9
     target: brand
     priority: 200
-
-  # P0 price policy: "Опт / Цена" = col 12 (row1=Опт, row2=Цена)
   price:
     type: column_position
     column: 12
     target: price
     priority: 200
-
 defaults:
   currency: "RUB"
-
-# Explode: одна входная строка -> N строк по складам
-# Остатки (qty) начинаются с col17..20 (row1: названия складов; row2: остаток)
+  price_scale: 100
 warehouses:
   - column: 17
     warehouse_name: "Центр. Склад"
@@ -57,8 +48,6 @@ warehouses:
   - column: 20
     warehouse_name: "Уфа опт(Соединительное шоссе)"
     qty_target: qty
-
-# не используем на этапе P0: предоплата/проценты/розница/миц/цфр/размерные колонки
 ignore_columns: [1,2,3,4,5,6,11,13,14,15,16]
 notes:
   - "col12 = Опт/Цена (основная цена P0)"
