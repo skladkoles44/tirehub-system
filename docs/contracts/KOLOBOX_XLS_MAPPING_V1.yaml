@@ -1,4 +1,11 @@
 mapping_version: "2026-02-06.v1"
+format_hints:
+  file_type: xls
+  sheet: "TDSheet"
+  header_row_1based: 1
+  subheader_row_1based: 2
+  data_start_row_1based: 3
+
 version: '1.0'
 created_at: '2026-02-03'
 globals:
