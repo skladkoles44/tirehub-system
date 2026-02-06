@@ -22,7 +22,7 @@
       "expected": "1.433515482695810564663023679"
     },
     "flags_counts.missing_price": {
-      "expected": 21,
+      "expected": 0,
       "tolerance_abs": 0
     },
     "good_rows": {
