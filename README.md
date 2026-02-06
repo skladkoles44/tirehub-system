@@ -9,6 +9,9 @@ ETL-система для приёма прайс-листов поставщи�
 ## Architecture
 Emitter → Gate → Ingestion → Curated / Offers
 
+## Run (Kolobox end-to-end)
+- VPS (etl): scripts/run_kolobox_full_v1.sh (emitter → gate → ingest → curated)
+
 ## Repo layout (WIP)
 - `docs/` — спецификации и контракты
 - `mappings/` — mapping-файлы поставщиков
