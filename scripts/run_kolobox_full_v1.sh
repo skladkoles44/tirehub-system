@@ -30,7 +30,8 @@ echo "out_dir: $OUT_DIR"
 echo "=== 0) git pull (VPS step is separate; here just file content) ==="
 
 echo "=== 1) Emitter ==="
-"$PY" scripts/ingestion/kolobox/emit_kolobox_ndjson_v1_FINAL.py \
+"$PY" scripts/ingestion/emit_generic_ndjson_v1.py \
+  --supplier-id "kolobox" \
   --input "$IN_FILE" \
   --mapping "$MAPPING" \
   --effective-at "$EFFECTIVE_AT" \
