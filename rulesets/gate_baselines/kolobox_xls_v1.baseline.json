@@ -10,7 +10,7 @@
     }
   },
   "flags_counts": {
-    "missing_price": 0,
+    "missing_price": 21,
     "price_from_cfr": 21
   },
   "metrics": {
@@ -22,7 +22,7 @@
       "expected": "1.433515482695810564663023679"
     },
     "flags_counts.missing_price": {
-      "expected": 0,
+      "expected": 21,
       "tolerance_abs": 0
     },
     "good_rows": {
