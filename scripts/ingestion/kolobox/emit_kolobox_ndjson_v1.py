@@ -222,6 +222,8 @@ def main():
 
     mp = load_yaml(mapping_path)
 
+
+    parser_id_var = str(mp.get('parser_id') or 'kolobox_xls_v1')
     hints = mp.get("format_hints", {}) or {}
     sheet_name = str(hints.get("sheet", "TDSheet"))
     header_r1 = int(hints.get("header_row_1based", 1))
@@ -249,7 +251,7 @@ def main():
     out_f = sys.stdout if args.out == "-" else open(args.out, "w", encoding="utf-8")
     stats = {
         "supplier_id": "kolobox",
-        "parser_id": "kolobox_xls_v1",
+        "parser_id": parser_id_var,
         "parser_version": "1.0",
         "run_id": args.run_id,
         "file": str(xls_path),
@@ -336,7 +338,7 @@ def main():
 
             row = {
                 "supplier_id": "kolobox",
-                "parser_id": "kolobox_xls_v1",
+                "parser_id": parser_id_var,
                 "parser_version": "1.0",
                 "run_id": args.run_id,
                 "quality_flags": qflags,
