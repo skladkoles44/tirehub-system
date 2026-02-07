@@ -1,0 +1,33 @@
+supplier_id: centrshin
+parser_id: centrshin_shiny_xlsx_v1
+parser_version: "1.0"
+
+format_hints:
+  file_type: xlsx
+  sheet: "Шины"
+  header_row_1based: 1
+  data_start_row_1based: 2
+  qty_words:
+    - "больше"
+    - "менее"
+    - "≈"
+
+cols:
+  sku:
+    column: 2        # Артикул
+  name:
+    column: 1        # Наименование
+  brand:
+    column: 3        # Бренд
+  price:
+    column: 13       # Цена оптовая
+  qty:
+    column: 12       # Остаток
+
+warehouses:
+  - column: 12
+    warehouse_name: "Центршин"
+    qty_target: qty
+
+defaults:
+  currency: RUB
