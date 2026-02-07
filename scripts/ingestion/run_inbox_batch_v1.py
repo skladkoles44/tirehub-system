@@ -5,6 +5,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
 
+
+
+def _norm_supplier_name(s: str) -> str:
+    return (s or '').strip().lower()
 def now_run_id() -> str:
     return time.strftime("%Y%m%d_%H%M%S", time.localtime())
 
@@ -239,3 +243,32 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+### SUPPLIER_HANDLERS
+
+def _add_centrshin_tasks(tasks, supplier_guess: str, file_path: str, run_id: str, out_dir: str):
+    # centrshin_stock*.xlsx contains multiple sheets; we emit at least Шины and Диски
+    if supplier_guess != "centrshin":
+        return False
+    if not file_path.lower().endswith(".xlsx"):
+        return False
+    # emit shiny
+    tasks.append({
+        "supplier_id": "centrshin",
+        "file": file_path,
+        "layout": "shiny",
+        "mapping": "mappings/suppliers/centrshin_shiny_xlsx_v1.yaml",
+        "emitter": "scripts/ingestion/centrshin/emit_centrshin_xlsx_shiny_v1.py",
+        "args_extra": ["--sheet", "Шины"],
+    })
+    # emit diski
+    tasks.append({
+        "supplier_id": "centrshin",
+        "file": file_path,
+        "layout": "diski",
+        "mapping": "mappings/suppliers/centrshin_diski_xlsx_v1.yaml",
+        "emitter": "scripts/ingestion/centrshin/emit_centrshin_xlsx_diski_v1.py",
+        "args_extra": ["--sheet", "Диски"],
+    })
+    return True
+
+
