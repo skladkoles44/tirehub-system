@@ -1,0 +1,25 @@
+supplier_id: kolobox
+parser_id: kolobox_diski_xls_v1
+parser_version: "1.0"
+cols:
+  sku:
+    column: 6
+  name:
+    column: 9
+  price:
+    column: 10
+warehouses:
+  - column: 13
+    warehouse_name: "Центр. Склад"
+    qty_target: qty
+  - column: 14
+    warehouse_name: "Саранск опт"
+    qty_target: qty
+  - column: 15
+    warehouse_name: "Тольятти опт(АХ)"
+    qty_target: qty
+  - column: 16
+    warehouse_name: "Уфа опт(Соединительное шоссе)"
+    qty_target: qty
+defaults:
+  currency: RUB
