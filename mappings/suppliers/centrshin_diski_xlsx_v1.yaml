@@ -1,0 +1,33 @@
+supplier_id: centrshin
+parser_id: centrshin_diski_xlsx_v1
+parser_version: "1.0"
+
+format_hints:
+  file_type: xlsx
+  sheet: "Диски"
+  header_row_1based: 1
+  data_start_row_1based: 2
+  qty_words:
+    - "больше"
+    - "менее"
+    - "≈"
+
+cols:
+  sku:
+    column: 2        # Артикул
+  name:
+    column: 1        # Наименование
+  brand:
+    column: 3        # Бренд
+  price:
+    column: 15       # Цена оптовая
+  qty:
+    column: 14       # Остаток
+
+warehouses:
+  - column: 14
+    warehouse_name: "Центршин"
+    qty_target: qty
+
+defaults:
+  currency: RUB
