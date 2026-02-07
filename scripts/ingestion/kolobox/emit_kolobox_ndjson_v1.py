@@ -257,6 +257,9 @@ def main():
         "lines": 0,
         "bad_json": 0,
         "bad_qty": 0,
+        "skipped_qty_empty": 0,
+        "skipped_qty_zero": 0,
+        "skipped_qty_invalid": 0,
         "bad_price": 0,
         "missing_sku": 0,
         "flags_counts": {},
@@ -298,14 +301,32 @@ def main():
 
             qflags = base_qflags + qty_flags
 
-            q_int = 0
+            # qty gating (SSOT): emit only if qty is a positive integer
+            # safe_int_str() returns digits-only string or "".
+            if qty_s == "":
+                # qty missing OR invalid (non-numeric / fraction / etc.) -> skip emission
+                raw_s = "" if qty_v is None else str(qty_v).strip()
+                if raw_s == "":
+                    stats["skipped_qty_empty"] += 1
+                else:
+                    stats["skipped_qty_invalid"] += 1
+                    stats["bad_qty"] += 1
+                continue
+            
             try:
-                q_int = int(qty_s) if qty_s else 0
-            except:
-                qflags.append("qty_non_numeric")
-            if q_int <= 0:
-                qflags.append("no_qty")
-
+                q_int = int(qty_s)
+            except Exception:
+                stats["skipped_qty_invalid"] += 1
+                stats["bad_qty"] += 1
+                continue
+            
+            if q_int == 0:
+                stats["skipped_qty_zero"] += 1
+                continue
+            if q_int < 0:
+                stats["skipped_qty_invalid"] += 1
+                stats["bad_qty"] += 1
+                continue
             if qty_s and (("." in qty_s) or ("," in qty_s)):
                 stats["bad_qty"] += 1
                 qflags.append("qty_has_decimal_separator")

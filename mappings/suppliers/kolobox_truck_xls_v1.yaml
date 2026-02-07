@@ -1,0 +1,18 @@
+supplier_id: kolobox
+parser_id: kolobox_truck_xls_v1
+parser_version: "1.0"
+# 1-based columns for this конкретный XLS (truck, TDSheet, header rows 0-1)
+# c6=Артикул, c9=Наименование, c10=Опт, c14=Центр. Склад
+cols:
+  sku:
+    column: 7
+  name:
+    column: 10
+  price:
+    column: 11
+warehouses:
+  - column: 15
+    warehouse_name: "Центр. Склад"
+    qty_target: qty
+defaults:
+  currency: RUB
