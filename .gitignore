@@ -5,3 +5,18 @@
 scripts/ingestion/run_inbox_batch_v1.py.bak*
 out/batch/_runlog_*.txt
 out/batch/_runlog_only_*.txt
+
+# generated outputs / runtime scratch
+out/
+tmp/
+**/__pycache__/
+*.pyc
+
+# pipeline scratch dirs
+curated_v1/out/
+curated_v1/tmp/
+offers_v1/out/
+offers_v1/tmp/
+
+# inbox raw supplier files (should not be tracked)
+inputs/inbox/
