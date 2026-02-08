@@ -1,0 +1,5 @@
+mapping_schema_version: "1.0"
+supplier_id: "centrshin"
+mapping_version: "1.0"
+parser_id: "centrshin_json_v1"
+notes: "Centrshin stock.json. One top-level category array = one task."

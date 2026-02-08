@@ -210,10 +210,7 @@ def main() -> int:
     ap.add_argument("--out", default="out/batch", help="output root (default: out/batch)")
     ap.add_argument("--run-id", default="", help="override run_id (default: now)")
     ap.add_argument("--known-only", action="store_true", help="skip unknown suppliers instead of marking as unsupported")
-    ap.add_argument("--only-supplier", default="", help="process only this supplier_id (normalized, e.g. centrshin)")
     args = ap.parse_args()
-
-    only_supplier = (args.only_supplier or "").strip().lower()
 
     inbox_root = Path(args.root)
     out_root = Path(args.out)
@@ -238,9 +235,7 @@ def main() -> int:
     }
     for f in files:
         supplier_raw = detect_supplier(f, inbox_root)
-        supplier = \(str\(supplier_raw\) if supplier_raw is not None else ""\)\.strip\(\)\.lower\(\)
-        if only_supplier and supplier != only_supplier:
-            continue
+        supplier = (str(supplier_raw) if supplier_raw is not None else "").strip().lower()
 
         adapter = next((a for a in ADAPTERS if a.can_handle(supplier)), None)
         if not adapter:

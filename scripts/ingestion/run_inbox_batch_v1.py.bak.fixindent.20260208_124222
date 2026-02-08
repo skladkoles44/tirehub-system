@@ -210,10 +210,7 @@ def main() -> int:
     ap.add_argument("--out", default="out/batch", help="output root (default: out/batch)")
     ap.add_argument("--run-id", default="", help="override run_id (default: now)")
     ap.add_argument("--known-only", action="store_true", help="skip unknown suppliers instead of marking as unsupported")
-    ap.add_argument("--only-supplier", default="", help="process only this supplier_id (normalized, e.g. centrshin)")
     args = ap.parse_args()
-
-    only_supplier = (args.only_supplier or "").strip().lower()
 
     inbox_root = Path(args.root)
     out_root = Path(args.out)
@@ -236,40 +233,26 @@ def main() -> int:
         "items": [],
         "unsupported": [],
     }
+
     for f in files:
         supplier_raw = detect_supplier(f, inbox_root)
-        supplier = \(str\(supplier_raw\) if supplier_raw is not None else ""\)\.strip\(\)\.lower\(\)
-        if only_supplier and supplier != only_supplier:
-            continue
+        supplier = (str(supplier_raw) if supplier_raw is not None else "").strip().lower()
 
         adapter = next((a for a in ADAPTERS if a.can_handle(supplier)), None)
         if not adapter:
             if args.known_only:
                 continue
-            report["unsupported"].append({
-                "file": safe_relpath(f),
-                "supplier_guess": supplier,
-                "supplier_guess_raw": supplier_raw,
-                "reason": "no adapter",
-            })
+            report["unsupported"].append({"file": safe_relpath(f), "supplier_guess": supplier, "supplier_guess_raw": supplier_raw, "reason": "no adapter"})
             continue
-
-        pl = adapter.plan(f, run_id, out_dir)
+                pl = adapter.plan(f, run_id, out_dir)
         if not pl:
             if args.known_only:
                 continue
-            report["unsupported"].append({
-                "file": safe_relpath(f),
-                "supplier_guess": supplier,
-                "supplier_guess_raw": supplier_raw,
-                "reason": "no plan",
-            })
+            report["unsupported"].append({"file": safe_relpath(f), "supplier_guess": supplier, "reason": "no plan"})
             continue
-
         plans = pl if isinstance(pl, list) else [pl]
         for one in plans:
             report["items"].append(run_plan(one))
-
 
     rep_path = out_dir / "report.json"
     rep_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
