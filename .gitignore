@@ -13,10 +13,46 @@ tmp/
 *.pyc
 
 # pipeline scratch dirs
-curated_v1/out/
-curated_v1/tmp/
-offers_v1/out/
-offers_v1/tmp/
+curated_v1/out/*
+!curated_v1/out/.gitkeep
+curated_v1/tmp/*
+!curated_v1/tmp/.gitkeep
+offers_v1/out/*
+!offers_v1/out/.gitkeep
+offers_v1/tmp/*
+!offers_v1/tmp/.gitkeep
 
 # inbox raw supplier files (should not be tracked)
 inputs/inbox/
+# generated artifacts (must not be versioned)
+out/
+tmp/
+**/__pycache__/
+*.pyc
+curated_v1/out/*
+!curated_v1/out/.gitkeep
+curated_v1/tmp/*
+!curated_v1/tmp/.gitkeep
+offers_v1/out/*
+!offers_v1/out/.gitkeep
+offers_v1/tmp/*
+!offers_v1/tmp/.gitkeep
+# supplier inbox raw files (keep local only)
+inputs/inbox/
+# keep directory structure but ignore generated contents
+curated_v1/out/*
+!curated_v1/out/.gitkeep*
+!curated_v1/out/*
+!curated_v1/out/.gitkeep.gitkeep
+curated_v1/tmp/*
+!curated_v1/tmp/.gitkeep*
+!curated_v1/tmp/*
+!curated_v1/tmp/.gitkeep.gitkeep
+offers_v1/out/*
+!offers_v1/out/.gitkeep*
+!offers_v1/out/*
+!offers_v1/out/.gitkeep.gitkeep
+offers_v1/tmp/*
+!offers_v1/tmp/.gitkeep*
+!offers_v1/tmp/*
+!offers_v1/tmp/.gitkeep.gitkeep
