@@ -1,0 +1,12 @@
+{
+  "supplier_id": "centrshin",
+  "parser_id": "centrshin__akkumulyatory__json_v1",
+  "layout": "category:akkumulyatory",
+  "lines": 98,
+  "seen_items": 98,
+  "emitted_items": 98,
+  "skipped_no_id": 0,
+  "skipped_qty_empty": 0,
+  "bad_price": 0,
+  "bad_qty": 0
+}

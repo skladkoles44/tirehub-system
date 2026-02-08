@@ -1,0 +1,549 @@
+== TIREHUB CONTEXT EXPORT ==
+ts_utc: 2026-02-06T11:40:10Z
+phone_pwd: /storage/emulated/0/Download/ETL/tirehub-system
+phone_head: d6f3eccef1e5
+
+== GIT STATUS ==
+## main...origin/main
+ M rulesets/gate_baselines/kolobox_xls_v1.baseline.json
+?? _bundles/
+?? emit_kolobox_ndjson_v1_FINAL.py
+?? golden/kolobox_shiny/
+?? parser_shiny_v1.py
+
+== GIT AHEAD/BEHIND vs origin/main ==
+ahead=0 behind=0
+
+== LAST 30 COMMITS ==
+d6f3ecc (HEAD -> main, origin/main, origin/HEAD) orchestrator: run kolobox via generic emitter entrypoint
+056ee98 emitter: add emit_generic_ndjson_v1 v0 wrapper (kolobox delegate)
+27f3e83 orchestrator: fix kolobox emitter out-dir (OUT_ROOT vs OUT_DIR), align artifact names
+4c23cb1 orchestrator: fix emitter CLI (--input/--effective-at/--out-dir) and wire artifacts
+5ac3f32 orchestrator: fix paths (curated out-dir), manifest path, final stats output
+ab28a6f contracts(kolobox): add format_hints to mapping v1
+753f7e2 contracts(kolobox): add mapping_version to KOLOBOX_XLS_MAPPING_V1
+ca92f62 ops: add run_kolobox_full_v1 orchestrator + README link
+a8f980a gate(kolobox): align baseline missing_price=21 with current stats
+aa2cef1 gate(kolobox): fix baseline missing_price contradiction
+ffc47ea docs: update ETL Canon v1 and link from README
+f9767a8 gate(kolobox): baseline for price_source_counts + cfr fallback
+8a47ddb curated: eligibility only by qty>0 (allow missing price as quality)
+d83ab4e curated: stop dropping facts for missing/nonpositive price (WBP v2)
+a344bb2 gate(kolobox): update baseline for v2 (skip empty/zero-qty warehouses)
+5ae3726 emitter(kolobox): skip empty/zero qty warehouses in main loop (do not emit facts)
+9e4dd2d fix(kolobox emitter): replace stray continue with return (skip empty/zero-qty warehouse emit)
+23e07e4 emitter(kolobox): drop empty/zero-qty warehouses at source (keep price_missing when qty>0)
+d8ae23b curated: add dropped_samples diagnostics + drop_counts (v1.1)
+9fe74cb curated: add curated v1 consumer for SSOT segments
+17ade25 wip(curated+offers): add v1 scaffold dirs
+e2a5b1f ingestion: fix effective_at RFC3339Z month parsing
+268d703 ingestion: add SSOT segmented ingest v1 CLI
+53bc7f1 gate_baseline(kolobox): add kolobox_xls_v1 baseline v1
+eefc1d6 gate(kolobox): support --baseline and baseline checks
+f4e7bd8 emitter+gate(kolobox): finalize emitter v1 + add gate v1 CLI
+62885ef mappings(kolobox): add mapping_version for emitter v1
+d907dc9 emitter(kolobox): add v1 FINAL scaffold + extractor split
+8f22d24 docs(etl): update canon v1 + add Q&A
+1bbd649 docs: rewrite README as navigation entrypoint
+
+== KEY FILE: orchestrator scripts/run_kolobox_full_v1.sh ==
+#!/usr/bin/env bash
+set -euo pipefail
+
+# run_kolobox_full_v1.sh — оркестратор Kolobox v1
+# emitter → gate → ingest → curated
+
+PY="${PY:-/home/etl/apps/tirehub/.venv/bin/python}"
+
+SUPPLIER="kolobox"
+IN_FILE="${IN_FILE:-inputs/inbox/Kolobox/Прайс_Колобокс_Шины_2026-02-03 (XLS).xls}"
+MAPPING="${MAPPING:-mappings/suppliers/kolobox.yaml}"
+EFFECTIVE_AT="${EFFECTIVE_AT:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
+RUN_ID="${RUN_ID:-kolobox_shiny_$(date -u +%Y%m%dT%H%M%SZ)_full}"
+
+OUT_ROOT="out/${SUPPLIER}/ndjson_v1final"
+OUT_DIR="${OUT_ROOT}/${RUN_ID}"
+
+GOOD_NDJSON="${OUT_DIR}/good.ndjson"
+STATS_JSON="${OUT_DIR}/stats.json"
+VERDICT_JSON="${OUT_DIR}/verdict.json"
+
+BASELINE="rulesets/gate_baselines/kolobox_xls_v1.baseline.json"
+
+echo "python:  $PY"
+echo "run_id:  $RUN_ID"
+echo "input:   $IN_FILE"
+echo "mapping: $MAPPING"
+echo "out_dir: $OUT_DIR"
+
+echo "=== 0) git pull (VPS step is separate; here just file content) ==="
+
+echo "=== 1) Emitter ==="
+"$PY" scripts/ingestion/emit_generic_ndjson_v1.py \
+  --supplier-id "kolobox" \
+  --input "$IN_FILE" \
+  --mapping "$MAPPING" \
+  --effective-at "$EFFECTIVE_AT" \
+  --run-id "$RUN_ID" \
+  --out-dir "$OUT_ROOT"
+
+test -d "$OUT_DIR" || { echo "NOT_FOUND: $OUT_DIR"; exit 1; }
+test -s "$GOOD_NDJSON" || { echo "NOT_FOUND: $GOOD_NDJSON"; ls -la "$OUT_DIR" || true; exit 1; }
+test -s "$STATS_JSON" || { echo "NOT_FOUND: $STATS_JSON"; ls -la "$OUT_DIR" || true; exit 1; }
+
+echo "=== 2) Gate ==="
+"$PY" scripts/ingestion/kolobox/tirehub_gate_v1.py \
+  --stats "$STATS_JSON" \
+  --baseline "$BASELINE" \
+  --out "$VERDICT_JSON"
+
+VERDICT="$(jq -r '.verdict' "$VERDICT_JSON")"
+echo "gate_verdict: $VERDICT"
+if [ "$VERDICT" = "FAIL" ]; then
+  echo "FAIL verdict.json:"
+  cat "$VERDICT_JSON"
+  exit 1
+fi
+
+echo "=== 3) Ingestion (SSOT) ==="
+"$PY" scripts/ingestion/tirehub_ingest_v1.py \
+  --good "$GOOD_NDJSON" \
+  --stats "$STATS_JSON" \
+  --verdict "$VERDICT_JSON" \
+  --mapping "$MAPPING"
+
+MANIFEST_JSON="ssot/manifests/${RUN_ID}.json"
+test -f "$MANIFEST_JSON" || {
+  echo "NOT_FOUND: $MANIFEST_JSON"
+  echo "== manifests tail =="
+  ls -la ssot/manifests 2>/dev/null | tail -n 50 || true
+  exit 1
+}
+
+echo "=== 4) Curated ==="
+"$PY" scripts/curated/tirehub_curate_v1.py \
+  --manifest "$MANIFEST_JSON" \
+  --out-dir "curated_v1/out/${RUN_ID}"
+
+echo "=== DONE ==="
+echo "OUT_DIR:     $OUT_DIR"
+echo "GOOD:        $GOOD_NDJSON"
+echo "STATS:       $STATS_JSON"
+echo "VERDICT:     $VERDICT_JSON"
+echo "MANIFEST:    $MANIFEST_JSON"
+echo "CURATED_DIR: curated_v1/out/${RUN_ID}"
+
+== KEY FILE: generic emitter scripts/ingestion/emit_generic_ndjson_v1.py ==
+#!/usr/bin/env python3
+import argparse, sys, subprocess
+
+def main():
+  ap = argparse.ArgumentParser(description="Generic NDJSON emitter v1 (v0 wrapper)")
+  ap.add_argument("--supplier-id", required=True)
+  ap.add_argument("--input", required=True)
+  ap.add_argument("--mapping", required=True)
+  ap.add_argument("--effective-at", required=True)
+  ap.add_argument("--run-id", required=True)
+  ap.add_argument("--out-dir", required=True)
+  args = ap.parse_args()
+
+  if args.supplier_id != "kolobox":
+    print(f"NOT_IMPLEMENTED: supplier_id={args.supplier_id} (v0 wrapper supports only kolobox)", file=sys.stderr)
+    return 2
+
+  cmd = [
+    sys.executable,
+    "scripts/ingestion/kolobox/emit_kolobox_ndjson_v1_FINAL.py",
+    "--input", args.input,
+    "--mapping", args.mapping,
+    "--effective-at", args.effective_at,
+    "--run-id", args.run_id,
+    "--out-dir", args.out_dir,
+  ]
+  return subprocess.call(cmd)
+
+if __name__ == "__main__":
+  raise SystemExit(main())
+
+== KEY FILE: baseline rulesets/gate_baselines/kolobox_xls_v1.baseline.json ==
+{
+  "baseline_version": "1.0",
+  "expected": {
+    "exploded_lines": 3935,
+    "good_rows": 3935,
+    "price_source_counts": {
+      "cfr": 21,
+      "none": 0,
+      "opt": 3914
+    }
+  },
+  "flags_counts": {
+    "missing_price": 21,
+    "price_from_cfr": 21
+  },
+  "metrics": {
+    "exploded_lines": {
+      "expected": 3935,
+      "tolerance_abs": 0
+    },
+    "explosion_factor_exact": {
+      "expected": "1.433515482695810564663023679"
+    },
+    "flags_counts.missing_price": {
+      "expected": 21,
+      "tolerance_abs": 0
+    },
+    "good_rows": {
+      "expected": 3935,
+      "tolerance_abs": 0
+    },
+    "source_rows_read": {
+      "expected": 2745,
+      "tolerance_abs": 0
+    },
+    "price_from_cfr": {
+      "expected": 21,
+      "tolerance_abs": 5
+    }
+  },
+  "notes": "v2: skip empty/zero-qty warehouses at source; keep price_missing when qty>0",
+  "parser_id": "kolobox_xls_v1"
+}
+
+== KEY FILE: runtime mapping mappings/suppliers/kolobox.yaml ==
+mapping_schema_version: "1.0"
+mapping_version: "3"
+supplier: "Kolobox"
+format_hints:
+  header_row_1based: 1
+  subheader_row_1based: 2
+  data_start_row_1based: 3
+  sheet: "TDSheet"
+columns:
+  article_primary:
+    type: column_position
+    column: 7
+    target: article
+    priority: 200
+  article_fallback:
+    type: column_position
+    column: 8
+    target: article
+    priority: 150
+  name:
+    type: column_position
+    column: 10
+    target: name
+    priority: 200
+  brand:
+    type: column_position
+    column: 9
+    target: brand
+    priority: 200
+  price:
+    type: column_position
+    column: 12
+    target: price
+    priority: 200
+defaults:
+  currency: "RUB"
+  price_scale: 100
+warehouses:
+  - column: 17
+    warehouse_name: "Центр. Склад"
+    qty_target: qty
+  - column: 18
+    warehouse_name: "Саранск опт"
+    qty_target: qty
+  - column: 19
+    warehouse_name: "Тольятти опт(АХ)"
+    qty_target: qty
+  - column: 20
+    warehouse_name: "Уфа опт(Соединительное шоссе)"
+    qty_target: qty
+ignore_columns: [1,2,3,4,5,6,11,13,14,15,16]
+notes:
+  - "col12 = Опт/Цена (основная цена P0)"
+  - "col17..20 = остатки по складам"
+
+== KEY FILE: contracts mapping docs/contracts/KOLOBOX_XLS_MAPPING_V1.yaml (top 220 lines) ==
+mapping_version: "2026-02-06.v1"
+format_hints:
+  file_type: xls
+  sheet: "TDSheet"
+  header_row_1based: 1
+  subheader_row_1based: 2
+  data_start_row_1based: 3
+
+version: '1.0'
+created_at: '2026-02-03'
+globals:
+  schema: ssot_ingestion
+  supplier_id: kolobox
+  parser_id: kolobox_xls_v1
+  reserved_parser_ids:
+  - seed
+  sheet_name: TDSheet
+  header_rows: 2
+  currency_default: RUB
+signature:
+  normalize:
+    lower: true
+    trim: true
+    collapse_spaces: true
+layouts:
+  diski_v1:
+    description: Колобокс — Диски
+    cols_expected: 17
+    anchors_row1_must_contain:
+    - псд
+    - диаметр
+    - ширина
+    - цо
+    - вылет
+    - марка (бренд)
+    - наименование
+    - опт
+    anchors_row2_must_contain:
+    - цена
+    - остаток
+    - заказ
+    columns:
+      supplier_article_col: 5
+      supplier_code_1c_col: 6
+      brand_col: 7
+      name_col: 8
+      price_opt_col: 9
+      price_retail_col: 10
+      price_mic_or_cfr_col: 11
+      warehouse_qty_cols:
+      - 13
+      - 14
+      - 15
+      order_col: 16
+    pricing_policy:
+      base_price: price_opt_col
+      also_capture:
+      - price_retail_col
+      ignore_as_price_for_p0:
+      - price_mic_or_cfr_col
+    qty_policy:
+      qty_required: true
+  komplektatsii_v1:
+    description: Колобокс — Комплектации
+    cols_expected: 18
+    anchors_row1_must_contain:
+    - вид к-ции
+    - резьба
+    - длина общ
+    - марка (бренд)
+    - наименование
+    - опт
+    - розничная
+    - миц
+    anchors_row2_must_contain:
+    - цена
+    - остаток
+    - заказ
+    columns:
+      supplier_article_col: 6
+      supplier_code_1c_col: 7
+      brand_col: 8
+      name_col: 9
+      price_opt_col: 10
+      price_retail_col: 11
+      price_mic_col: 12
+      warehouse_qty_cols:
+      - 14
+      - 15
+      - 16
+      order_col: 17
+    pricing_policy:
+      base_price: price_opt_col
+      also_capture:
+      - price_retail_col
+      - price_mic_col
+    qty_policy:
+      qty_required: true
+  shiny_v1:
+    description: Колобокс — Шины (легковые)
+    cols_expected: 21
+    anchors_row1_must_contain:
+    - размер
+    - ширина шины, мм
+    - профиль шины, %
+    - диаметр шины, дюйм
+    - сезонность
+    - шип.
+    - марка (бренд)
+    - наименование
+    - опт
+    anchors_row2_must_contain:
+    - цена
+    - остаток
+    columns:
+      supplier_article_col: 6
+      supplier_code_1c_col: 7
+      brand_col: 8
+      name_col: 9
+      prepay_price_col: 10
+      price_opt_col: 11
+      percent_col: 12
+      price_retail_col: 13
+      price_mic_col: 14
+      cfr_price_col: 15
+      warehouse_qty_cols:
+      - 17
+      - 18
+      - 19
+      order_col: 20
+    pricing_policy:
+      base_price: price_opt_col
+      also_capture:
+      - price_retail_col
+      - price_mic_col
+      ignore_as_price_for_p0:
+      - prepay_price_col
+      - cfr_price_col
+    qty_policy:
+      qty_required: true
+  truck_v1:
+    description: Колобокс — Шины грузовые
+    cols_expected: 16
+    anchors_row1_must_contain:
+    - размер
+    - ширина шины, мм
+    - профиль шины, %
+    - диаметр шины, дюйм
+    - сезонность
+    - шип.
+    - марка (бренд)
+    - наименование
+    - опт
+    anchors_row2_must_contain:
+    - цена
+    - '%'
+    - заказ
+    columns:
+      supplier_article_col: 6
+      supplier_code_1c_col: 7
+      brand_col: 8
+      name_col: 9
+      price_opt_col: 10
+      percent_col: 11
+      price_retail_col: 12
+      price_mic_col: 13
+      warehouse_qty_cols: []
+      order_col: 15
+    pricing_policy:
+      base_price: price_opt_col
+      also_capture:
+      - price_retail_col
+      - price_mic_col
+    qty_policy:
+      qty_required: false
+      note: no qty columns in file; treat as SOFT for qty gates
+dispatch:
+  method: anchor_match
+  rules:
+  - name: komplektatsii
+    layout: komplektatsii_v1
+    match:
+      row1_contains_all:
+      - вид к-ции
+      - резьба
+      - длина общ
+      - миц
+      cols_expected: 18
+      signature_contains_all:
+      - вид к-ции
+      - резьба
+      - длина общ
+      - миц
+    header_rows: 2
+  - name: diski
+    layout: diski_v1
+    match:
+      row1_contains_all:
+      - псд
+      - диаметр
+      - ширина
+      - цо
+      - вылет
+      cols_expected: 17
+      signature_contains_all:
+      - псд
+      - диаметр
+      - ширина
+      - цо
+      - вылет
+    header_rows: 2
+  - name: shiny
+    layout: shiny_v1
+    match:
+      row1_contains_all:
+      - сезонность
+      - шип.
+      - предоплата
+      - цфр
+      cols_expected: 21
+
+== GOLDEN ARTIFACTS (phone) ==
+golden/kolobox_shiny/kolobox_shiny_20260206T085219Z_full/curated.ndjson
+golden/kolobox_shiny/kolobox_shiny_20260206T085219Z_full/curated.stderr.log
+golden/kolobox_shiny/kolobox_shiny_20260206T085219Z_full/good.ndjson
+golden/kolobox_shiny/kolobox_shiny_20260206T085219Z_full/manifest.json
+golden/kolobox_shiny/kolobox_shiny_20260206T085219Z_full/stats.json
+golden/kolobox_shiny/kolobox_shiny_20260206T085219Z_full/verdict.json
+
+== GOLDEN SHA256 ==
+314a193359adc5bcfa43529b9e694eda04674f94950dcc6175e83abc2fccefda  ./kolobox_shiny_20260206T085219Z_full/curated.ndjson
+dd8190f2c0eba16642acb01e614c4e10acb3d8c6cdb52b36cb88b9f893ee0175  ./kolobox_shiny_20260206T085219Z_full/curated.stderr.log
+314a193359adc5bcfa43529b9e694eda04674f94950dcc6175e83abc2fccefda  ./kolobox_shiny_20260206T085219Z_full/good.ndjson
+d1388ebf21e41126ead6013cbe2b4602ba453abb43677e81b5903bcedec921f5  ./kolobox_shiny_20260206T085219Z_full/manifest.json
+fe29c73f30aea5ed96c1b6ef95960369e13572d77469f0ceee6f4c9855a24f90  ./kolobox_shiny_20260206T085219Z_full/stats.json
+1bb232b4b9369f7c680916377cd7eb59e261ad7e864e01ca36050ed927926d6d  ./kolobox_shiny_20260206T085219Z_full/verdict.json
+
+== QUICK PROOF: generic wrapper vs golden (if tmp/generic_smoke exists) ==
+tmp/generic_smoke/kolobox_shiny_20260206T085219Z_full/bad_rows.ndjson
+tmp/generic_smoke/kolobox_shiny_20260206T085219Z_full/good.ndjson
+tmp/generic_smoke/kolobox_shiny_20260206T085219Z_full/stats.json
+tmp/generic_smoke/kolobox_shiny_20260206T085219Z_full/stderr.log
+
+== tmp/generic_smoke SHA256 ==
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  ./kolobox_shiny_20260206T085219Z_full/bad_rows.ndjson
+314a193359adc5bcfa43529b9e694eda04674f94950dcc6175e83abc2fccefda  ./kolobox_shiny_20260206T085219Z_full/good.ndjson
+fe29c73f30aea5ed96c1b6ef95960369e13572d77469f0ceee6f4c9855a24f90  ./kolobox_shiny_20260206T085219Z_full/stats.json
+fe29c73f30aea5ed96c1b6ef95960369e13572d77469f0ceee6f4c9855a24f90  ./kolobox_shiny_20260206T085219Z_full/stderr.log
+
+== OPTIONAL: VPS SUMMARY (ssh) ==
+COPIED: tmp/HELPER_CONTEXT_20260206T114010Z.txt
+Welcome to Ubuntu 24.04.3 LTS (GNU/Linux 6.8.0-94-generic x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/pro
+
+ System information as of Fri Feb  6 02:41:53 PM MSK 2026
+
+  System load:  0.18               Processes:             144
+  Usage of /:   51.0% of 39.29GB   Users logged in:       0
+  Memory usage: 27%                IPv4 address for ens3: 192.168.0.206
+  Swap usage:   10%
+
+ * Strictly confined Kubernetes makes edge and IoT secure. Learn how MicroK8s
+   just raised the bar for easy, resilient and secure K8s cluster deployment.
+
+   https://ubuntu.com/engage/secure-kubernetes-at-the-edge
+
+Expanded Security Maintenance for Applications is not enabled.
+
+47 updates can be applied immediately.
+To see these additional updates run: apt list --upgradable
+
+1 additional security update can be applied with ESM Apps.
+Learn more about enabling ESM Apps service at https://ubuntu.com/esm
+
+
+Last login: Fri Feb  6 12:20:24 2026 from 85.249.19.142
+[?2004h]0;etl@cv4769594: ~[01;32metl@cv4769594[00m:[01;34m~[00m$ 

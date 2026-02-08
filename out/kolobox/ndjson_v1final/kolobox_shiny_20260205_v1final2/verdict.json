@@ -1,0 +1,1 @@
+{"gate_version":"1.0.0","parser_id":"kolobox_xls_v1","reasons":[{"code":"baseline_missing","detail":"baseline not configured","level":"WARN"}],"run_id":"kolobox_shiny_20260205_v1final2","stats_ref":"out/kolobox/ndjson_v1final/kolobox_shiny_20260205_v1final2/stats.json","supplier_id":"kolobox","verdict":"WARN"}

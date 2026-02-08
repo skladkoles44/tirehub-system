@@ -1,0 +1,18 @@
+{
+  "supplier_id": "kolobox",
+  "parser_id": "kolobox_xls_v1",
+  "parser_version": "1.0",
+  "run_id": "termux_qty_gate_test_20260207T070634Z",
+  "file": "inputs/inbox/Kolobox/Прайс_Колобокс_Шины_2026-02-03 (XLS).xls",
+  "layout": "shiny",
+  "lines": 10980,
+  "bad_json": 0,
+  "bad_qty": 0,
+  "bad_price": 21,
+  "missing_sku": 0,
+  "flags_counts": {
+    "no_qty": 7045,
+    "qty_approximated": 517,
+    "missing_price": 84
+  }
+}

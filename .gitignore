@@ -1,12 +1,7 @@
-
-# local venvs / scratch
-.venv_xls/
-tmp/
-
-__pycache__/
-*.pyc
-.venv*/
-
-# build/run artifacts
-out/
-inputs/inbox/
+# local backups / scratch
+*.bak
+*.bak.*
+*.bak_*
+scripts/ingestion/run_inbox_batch_v1.py.bak*
+out/batch/_runlog_*.txt
+out/batch/_runlog_only_*.txt

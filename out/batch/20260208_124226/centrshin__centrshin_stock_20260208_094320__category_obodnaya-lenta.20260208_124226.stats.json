@@ -1,0 +1,12 @@
+{
+  "supplier_id": "centrshin",
+  "parser_id": "centrshin__obodnaya-lenta__json_v1",
+  "layout": "category:obodnaya-lenta",
+  "lines": 69,
+  "seen_items": 69,
+  "emitted_items": 69,
+  "skipped_no_id": 0,
+  "skipped_qty_empty": 0,
+  "bad_price": 0,
+  "bad_qty": 0
+}

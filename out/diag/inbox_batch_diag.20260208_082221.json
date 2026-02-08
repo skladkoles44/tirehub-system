@@ -1,0 +1,41 @@
+{
+  "run_id": "20260208_082221",
+  "ts_local": "2026-02-08 08:22:22",
+  "pwd": "/storage/emulated/0/Download/ETL/tirehub-system",
+  "file": "scripts/ingestion/run_inbox_batch_v1.py",
+  "git": {
+    "branch": "main",
+    "head": "4b12fbe3ea8d1a8ddc99668c15fd6485cb31ef23",
+    "status": "## main...origin/main\n M scripts/ingestion/run_inbox_batch_v1.py\n?? scripts/ingestion/run_inbox_batch_v1.py.bak.20260208T051033Z\n?? scripts/ingestion/run_inbox_batch_v1.py.bak_detect_supplier_lower",
+    "untracked": [
+      "scripts/ingestion/run_inbox_batch_v1.py.bak.20260208T051033Z",
+      "scripts/ingestion/run_inbox_batch_v1.py.bak_detect_supplier_lower"
+    ],
+    "diff_file": "diff --git a/scripts/ingestion/run_inbox_batch_v1.py b/scripts/ingestion/run_inbox_batch_v1.py\nindex 7d2a29f..b6c0666 100644\n--- a/scripts/ingestion/run_inbox_batch_v1.py\n+++ b/scripts/ingestion/run_inbox_batch_v1.py\n@@ -204,12 +204,14 @@ def main() -> int:\n     }\n \n     for f in files:\n-        supplier = detect_supplier(f, inbox_root)\n+        supplier_raw = detect_supplier(f, inbox_root)\n+        supplier = (str(supplier_raw) if supplier_raw is not None else \"\").strip().lower()\n+\n         adapter = next((a for a in ADAPTERS if a.can_handle(supplier)), None)\n         if not adapter:\n             if args.known_only:\n                 continue\n-            report[\"unsupported\"].append({\"file\": safe_relpath(f), \"supplier_guess\": supplier})\n+            report[\"unsupported\"].append({\"file\": safe_relpath(f), \"supplier_guess\": supplier, \"supplier_guess_raw\": supplier_raw})\n             continue\n         pl = adapter.plan(f, run_id, out_dir)\n         if not pl:"
+  },
+  "module_load": {
+    "loaded": false,
+    "error": "AttributeError(\"'NoneType' object has no attribute '__dict__'\")"
+  },
+  "detect_supplier_present": false,
+  "adapters": [],
+  "can_handle_matrix": [],
+  "latest_report": "out/batch/20260208_081033/report.json",
+  "report_summary": {
+    "items_total": 9,
+    "items": 4,
+    "unsupported": 5
+  },
+  "centrshin_unsupported": [
+    {
+      "file": "inputs/inbox/CentrShin/centrshin_stock_20260207_154843.xlsx",
+      "supplier_guess": "centrshin",
+      "supplier_guess_raw": "CentrShin"
+    },
+    {
+      "file": "inputs/inbox/CentrShin/stock (7).xlsx",
+      "supplier_guess": "centrshin",
+      "supplier_guess_raw": "CentrShin"
+    }
+  ]
+}

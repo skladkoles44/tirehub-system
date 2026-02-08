@@ -238,7 +238,7 @@ def main() -> int:
     }
     for f in files:
         supplier_raw = detect_supplier(f, inbox_root)
-        supplier = \(str\(supplier_raw\) if supplier_raw is not None else ""\)\.strip\(\)\.lower\(\)
+        supplier = (str(supplier_raw) if supplier_raw is not None else "").strip().lower()
         if only_supplier and supplier != only_supplier:
             continue
 

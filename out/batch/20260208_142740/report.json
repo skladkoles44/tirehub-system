@@ -1,0 +1,321 @@
+{
+  "run_id": "20260208_142740",
+  "inbox_root": "inputs/inbox",
+  "out_dir": "out/batch/20260208_142740",
+  "items_total": 10,
+  "items": [
+    {
+      "supplier_id": "centrshin",
+      "file": "inputs/inbox/Centrshin/centrshin_stock_20260208_094320.json",
+      "layout": "category:akkumulyatory",
+      "mapping": "mappings/suppliers/centrshin_json_v1.yaml",
+      "emitter": "scripts/ingestion/centrshin/emit_centrshin_json_category_v1.py",
+      "out_ndjson": "out/batch/20260208_142740/centrshin__centrshin_stock_20260208_094320__category_akkumulyatory.20260208_142740.ndjson",
+      "out_stats": "out/batch/20260208_142740/centrshin__centrshin_stock_20260208_094320__category_akkumulyatory.20260208_142740.stats.json",
+      "out_log": "out/batch/20260208_142740/centrshin__centrshin_stock_20260208_094320__category_akkumulyatory.20260208_142740.log",
+      "exit_code": 0,
+      "stats": {
+        "supplier_id": "centrshin",
+        "parser_id": "centrshin__akkumulyatory__json_v1",
+        "layout": "category:akkumulyatory",
+        "lines": 98,
+        "seen_items": 98,
+        "emitted_items": 98,
+        "skipped_no_id": 0,
+        "skipped_qty_empty": 0,
+        "bad_price": 0,
+        "bad_qty": 0
+      }
+    },
+    {
+      "supplier_id": "centrshin",
+      "file": "inputs/inbox/Centrshin/centrshin_stock_20260208_094320.json",
+      "layout": "category:akkumulyatory-dlya-gruzovikov-i-spetstehniki",
+      "mapping": "mappings/suppliers/centrshin_json_v1.yaml",
+      "emitter": "scripts/ingestion/centrshin/emit_centrshin_json_category_v1.py",
+      "out_ndjson": "out/batch/20260208_142740/centrshin__centrshin_stock_20260208_094320__category_akkumulyatory-dlya-gruzovikov-i-spetstehniki.20260208_142740.ndjson",
+      "out_stats": "out/batch/20260208_142740/centrshin__centrshin_stock_20260208_094320__category_akkumulyatory-dlya-gruzovikov-i-spetstehniki.20260208_142740.stats.json",
+      "out_log": "out/batch/20260208_142740/centrshin__centrshin_stock_20260208_094320__category_akkumulyatory-dlya-gruzovikov-i-spetstehniki.20260208_142740.log",
+      "exit_code": 0,
+      "stats": {
+        "supplier_id": "centrshin",
+        "parser_id": "centrshin__akkumulyatory-dlya-gruzovikov-i-spetstehniki__json_v1",
+        "layout": "category:akkumulyatory-dlya-gruzovikov-i-spetstehniki",
+        "lines": 66,
+        "seen_items": 66,
+        "emitted_items": 66,
+        "skipped_no_id": 0,
+        "skipped_qty_empty": 0,
+        "bad_price": 0,
+        "bad_qty": 0
+      }
+    },
+    {
+      "supplier_id": "centrshin",
+      "file": "inputs/inbox/Centrshin/centrshin_stock_20260208_094320.json",
+      "layout": "category:axessuary",
+      "mapping": "mappings/suppliers/centrshin_json_v1.yaml",
+      "emitter": "scripts/ingestion/centrshin/emit_centrshin_json_category_v1.py",
+      "out_ndjson": "out/batch/20260208_142740/centrshin__centrshin_stock_20260208_094320__category_axessuary.20260208_142740.ndjson",
+      "out_stats": "out/batch/20260208_142740/centrshin__centrshin_stock_20260208_094320__category_axessuary.20260208_142740.stats.json",
+      "out_log": "out/batch/20260208_142740/centrshin__centrshin_stock_20260208_094320__category_axessuary.20260208_142740.log",
+      "exit_code": 0,
+      "stats": {
+        "supplier_id": "centrshin",
+        "parser_id": "centrshin__axessuary__json_v1",
+        "layout": "category:axessuary",
+        "lines": 25,
+        "seen_items": 25,
+        "emitted_items": 25,
+        "skipped_no_id": 0,
+        "skipped_qty_empty": 0,
+        "bad_price": 0,
+        "bad_qty": 0
+      }
+    },
+    {
+      "supplier_id": "centrshin",
+      "file": "inputs/inbox/Centrshin/centrshin_stock_20260208_094320.json",
+      "layout": "category:diski",
+      "mapping": "mappings/suppliers/centrshin_json_v1.yaml",
+      "emitter": "scripts/ingestion/centrshin/emit_centrshin_json_category_v1.py",
+      "out_ndjson": "out/batch/20260208_142740/centrshin__centrshin_stock_20260208_094320__category_diski.20260208_142740.ndjson",
+      "out_stats": "out/batch/20260208_142740/centrshin__centrshin_stock_20260208_094320__category_diski.20260208_142740.stats.json",
+      "out_log": "out/batch/20260208_142740/centrshin__centrshin_stock_20260208_094320__category_diski.20260208_142740.log",
+      "exit_code": 0,
+      "stats": {
+        "supplier_id": "centrshin",
+        "parser_id": "centrshin__diski__json_v1",
+        "layout": "category:diski",
+        "lines": 880,
+        "seen_items": 880,
+        "emitted_items": 880,
+        "skipped_no_id": 0,
+        "skipped_qty_empty": 0,
+        "bad_price": 0,
+        "bad_qty": 0
+      }
+    },
+    {
+      "supplier_id": "centrshin",
+      "file": "inputs/inbox/Centrshin/centrshin_stock_20260208_094320.json",
+      "layout": "category:gruzovie-shini",
+      "mapping": "mappings/suppliers/centrshin_json_v1.yaml",
+      "emitter": "scripts/ingestion/centrshin/emit_centrshin_json_category_v1.py",
+      "out_ndjson": "out/batch/20260208_142740/centrshin__centrshin_stock_20260208_094320__category_gruzovie-shini.20260208_142740.ndjson",
+      "out_stats": "out/batch/20260208_142740/centrshin__centrshin_stock_20260208_094320__category_gruzovie-shini.20260208_142740.stats.json",
+      "out_log": "out/batch/20260208_142740/centrshin__centrshin_stock_20260208_094320__category_gruzovie-shini.20260208_142740.log",
+      "exit_code": 0,
+      "stats": {
+        "supplier_id": "centrshin",
+        "parser_id": "centrshin__gruzovie-shini__json_v1",
+        "layout": "category:gruzovie-shini",
+        "lines": 448,
+        "seen_items": 448,
+        "emitted_items": 448,
+        "skipped_no_id": 0,
+        "skipped_qty_empty": 0,
+        "bad_price": 0,
+        "bad_qty": 0
+      }
+    },
+    {
+      "supplier_id": "centrshin",
+      "file": "inputs/inbox/Centrshin/centrshin_stock_20260208_094320.json",
+      "layout": "category:gruzovye-i-selhoz-diski",
+      "mapping": "mappings/suppliers/centrshin_json_v1.yaml",
+      "emitter": "scripts/ingestion/centrshin/emit_centrshin_json_category_v1.py",
+      "out_ndjson": "out/batch/20260208_142740/centrshin__centrshin_stock_20260208_094320__category_gruzovye-i-selhoz-diski.20260208_142740.ndjson",
+      "out_stats": "out/batch/20260208_142740/centrshin__centrshin_stock_20260208_094320__category_gruzovye-i-selhoz-diski.20260208_142740.stats.json",
+      "out_log": "out/batch/20260208_142740/centrshin__centrshin_stock_20260208_094320__category_gruzovye-i-selhoz-diski.20260208_142740.log",
+      "exit_code": 0,
+      "stats": {
+        "supplier_id": "centrshin",
+        "parser_id": "centrshin__gruzovye-i-selhoz-diski__json_v1",
+        "layout": "category:gruzovye-i-selhoz-diski",
+        "lines": 337,
+        "seen_items": 337,
+        "emitted_items": 337,
+        "skipped_no_id": 0,
+        "skipped_qty_empty": 0,
+        "bad_price": 0,
+        "bad_qty": 0
+      }
+    },
+    {
+      "supplier_id": "centrshin",
+      "file": "inputs/inbox/Centrshin/centrshin_stock_20260208_094320.json",
+      "layout": "category:kamery",
+      "mapping": "mappings/suppliers/centrshin_json_v1.yaml",
+      "emitter": "scripts/ingestion/centrshin/emit_centrshin_json_category_v1.py",
+      "out_ndjson": "out/batch/20260208_142740/centrshin__centrshin_stock_20260208_094320__category_kamery.20260208_142740.ndjson",
+      "out_stats": "out/batch/20260208_142740/centrshin__centrshin_stock_20260208_094320__category_kamery.20260208_142740.stats.json",
+      "out_log": "out/batch/20260208_142740/centrshin__centrshin_stock_20260208_094320__category_kamery.20260208_142740.log",
+      "exit_code": 0,
+      "stats": {
+        "supplier_id": "centrshin",
+        "parser_id": "centrshin__kamery__json_v1",
+        "layout": "category:kamery",
+        "lines": 211,
+        "seen_items": 211,
+        "emitted_items": 211,
+        "skipped_no_id": 0,
+        "skipped_qty_empty": 0,
+        "bad_price": 0,
+        "bad_qty": 0
+      }
+    },
+    {
+      "supplier_id": "centrshin",
+      "file": "inputs/inbox/Centrshin/centrshin_stock_20260208_094320.json",
+      "layout": "category:koltsa-ustanovochnye",
+      "mapping": "mappings/suppliers/centrshin_json_v1.yaml",
+      "emitter": "scripts/ingestion/centrshin/emit_centrshin_json_category_v1.py",
+      "out_ndjson": "out/batch/20260208_142740/centrshin__centrshin_stock_20260208_094320__category_koltsa-ustanovochnye.20260208_142740.ndjson",
+      "out_stats": "out/batch/20260208_142740/centrshin__centrshin_stock_20260208_094320__category_koltsa-ustanovochnye.20260208_142740.stats.json",
+      "out_log": "out/batch/20260208_142740/centrshin__centrshin_stock_20260208_094320__category_koltsa-ustanovochnye.20260208_142740.log",
+      "exit_code": 0,
+      "stats": {
+        "supplier_id": "centrshin",
+        "parser_id": "centrshin__koltsa-ustanovochnye__json_v1",
+        "layout": "category:koltsa-ustanovochnye",
+        "lines": 2,
+        "seen_items": 2,
+        "emitted_items": 2,
+        "skipped_no_id": 0,
+        "skipped_qty_empty": 0,
+        "bad_price": 0,
+        "bad_qty": 0
+      }
+    },
+    {
+      "supplier_id": "centrshin",
+      "file": "inputs/inbox/Centrshin/centrshin_stock_20260208_094320.json",
+      "layout": "category:obodnaya-lenta",
+      "mapping": "mappings/suppliers/centrshin_json_v1.yaml",
+      "emitter": "scripts/ingestion/centrshin/emit_centrshin_json_category_v1.py",
+      "out_ndjson": "out/batch/20260208_142740/centrshin__centrshin_stock_20260208_094320__category_obodnaya-lenta.20260208_142740.ndjson",
+      "out_stats": "out/batch/20260208_142740/centrshin__centrshin_stock_20260208_094320__category_obodnaya-lenta.20260208_142740.stats.json",
+      "out_log": "out/batch/20260208_142740/centrshin__centrshin_stock_20260208_094320__category_obodnaya-lenta.20260208_142740.log",
+      "exit_code": 0,
+      "stats": {
+        "supplier_id": "centrshin",
+        "parser_id": "centrshin__obodnaya-lenta__json_v1",
+        "layout": "category:obodnaya-lenta",
+        "lines": 69,
+        "seen_items": 69,
+        "emitted_items": 69,
+        "skipped_no_id": 0,
+        "skipped_qty_empty": 0,
+        "bad_price": 0,
+        "bad_qty": 0
+      }
+    },
+    {
+      "supplier_id": "centrshin",
+      "file": "inputs/inbox/Centrshin/centrshin_stock_20260208_094320.json",
+      "layout": "category:prostavki-dlya-diskov",
+      "mapping": "mappings/suppliers/centrshin_json_v1.yaml",
+      "emitter": "scripts/ingestion/centrshin/emit_centrshin_json_category_v1.py",
+      "out_ndjson": "out/batch/20260208_142740/centrshin__centrshin_stock_20260208_094320__category_prostavki-dlya-diskov.20260208_142740.ndjson",
+      "out_stats": "out/batch/20260208_142740/centrshin__centrshin_stock_20260208_094320__category_prostavki-dlya-diskov.20260208_142740.stats.json",
+      "out_log": "out/batch/20260208_142740/centrshin__centrshin_stock_20260208_094320__category_prostavki-dlya-diskov.20260208_142740.log",
+      "exit_code": 0,
+      "stats": {
+        "supplier_id": "centrshin",
+        "parser_id": "centrshin__prostavki-dlya-diskov__json_v1",
+        "layout": "category:prostavki-dlya-diskov",
+        "lines": 2,
+        "seen_items": 2,
+        "emitted_items": 2,
+        "skipped_no_id": 0,
+        "skipped_qty_empty": 0,
+        "bad_price": 0,
+        "bad_qty": 0
+      }
+    },
+    {
+      "supplier_id": "centrshin",
+      "file": "inputs/inbox/Centrshin/centrshin_stock_20260208_094320.json",
+      "layout": "category:sekretki-i-krepezh",
+      "mapping": "mappings/suppliers/centrshin_json_v1.yaml",
+      "emitter": "scripts/ingestion/centrshin/emit_centrshin_json_category_v1.py",
+      "out_ndjson": "out/batch/20260208_142740/centrshin__centrshin_stock_20260208_094320__category_sekretki-i-krepezh.20260208_142740.ndjson",
+      "out_stats": "out/batch/20260208_142740/centrshin__centrshin_stock_20260208_094320__category_sekretki-i-krepezh.20260208_142740.stats.json",
+      "out_log": "out/batch/20260208_142740/centrshin__centrshin_stock_20260208_094320__category_sekretki-i-krepezh.20260208_142740.log",
+      "exit_code": 0,
+      "stats": {
+        "supplier_id": "centrshin",
+        "parser_id": "centrshin__sekretki-i-krepezh__json_v1",
+        "layout": "category:sekretki-i-krepezh",
+        "lines": 9,
+        "seen_items": 9,
+        "emitted_items": 9,
+        "skipped_no_id": 0,
+        "skipped_qty_empty": 0,
+        "bad_price": 0,
+        "bad_qty": 0
+      }
+    },
+    {
+      "supplier_id": "centrshin",
+      "file": "inputs/inbox/Centrshin/centrshin_stock_20260208_094320.json",
+      "layout": "category:selhoz-shini",
+      "mapping": "mappings/suppliers/centrshin_json_v1.yaml",
+      "emitter": "scripts/ingestion/centrshin/emit_centrshin_json_category_v1.py",
+      "out_ndjson": "out/batch/20260208_142740/centrshin__centrshin_stock_20260208_094320__category_selhoz-shini.20260208_142740.ndjson",
+      "out_stats": "out/batch/20260208_142740/centrshin__centrshin_stock_20260208_094320__category_selhoz-shini.20260208_142740.stats.json",
+      "out_log": "out/batch/20260208_142740/centrshin__centrshin_stock_20260208_094320__category_selhoz-shini.20260208_142740.log",
+      "exit_code": 0,
+      "stats": {
+        "supplier_id": "centrshin",
+        "parser_id": "centrshin__selhoz-shini__json_v1",
+        "layout": "category:selhoz-shini",
+        "lines": 1030,
+        "seen_items": 1030,
+        "emitted_items": 1030,
+        "skipped_no_id": 0,
+        "skipped_qty_empty": 0,
+        "bad_price": 0,
+        "bad_qty": 0
+      }
+    },
+    {
+      "supplier_id": "centrshin",
+      "file": "inputs/inbox/Centrshin/centrshin_stock_20260208_094320.json",
+      "layout": "category:shini",
+      "mapping": "mappings/suppliers/centrshin_json_v1.yaml",
+      "emitter": "scripts/ingestion/centrshin/emit_centrshin_json_category_v1.py",
+      "out_ndjson": "out/batch/20260208_142740/centrshin__centrshin_stock_20260208_094320__category_shini.20260208_142740.ndjson",
+      "out_stats": "out/batch/20260208_142740/centrshin__centrshin_stock_20260208_094320__category_shini.20260208_142740.stats.json",
+      "out_log": "out/batch/20260208_142740/centrshin__centrshin_stock_20260208_094320__category_shini.20260208_142740.log",
+      "exit_code": 0,
+      "stats": {
+        "supplier_id": "centrshin",
+        "parser_id": "centrshin__shini__json_v1",
+        "layout": "category:shini",
+        "lines": 2374,
+        "seen_items": 2374,
+        "emitted_items": 2374,
+        "skipped_no_id": 0,
+        "skipped_qty_empty": 0,
+        "bad_price": 0,
+        "bad_qty": 0
+      }
+    }
+  ],
+  "unsupported": [
+    {
+      "file": "inputs/inbox/Centrshin/centrshin_stock_20260207_154843.xlsx",
+      "supplier_guess": "centrshin",
+      "supplier_guess_raw": "Centrshin",
+      "reason": "no plan"
+    },
+    {
+      "file": "inputs/inbox/Centrshin/stock (7).xlsx",
+      "supplier_guess": "centrshin",
+      "supplier_guess_raw": "Centrshin",
+      "reason": "no plan"
+    }
+  ]
+}
