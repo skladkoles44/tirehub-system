@@ -4,18 +4,20 @@ import argparse, json, sys, time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+
 def _as_float(x: Any) -> Optional[float]:
     if x is None:
         return None
     if isinstance(x, (int, float)):
         return float(x)
     s = str(x).strip().replace(" ", "").replace(",", ".")
-    if s == "" or s.lower() in ("none","null","nan"):
+    if s == "" or s.lower() in ("none", "null", "nan"):
         return None
     try:
         return float(s)
     except Exception:
         return None
+
 
 def _as_int(x: Any) -> Optional[int]:
     f = _as_float(x)
@@ -26,15 +28,17 @@ def _as_int(x: Any) -> Optional[int]:
     except Exception:
         return None
 
+
 def _atomic_write_text(path: Path, text: str) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(text, encoding="utf-8")
     tmp.replace(path)
 
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--file", required=True)
-    ap.add_argument("--layout", required=True)   # expects category:<key>
+    ap.add_argument("--layout", required=True)  # expects category:<key>
     ap.add_argument("--run-id", required=True)
     ap.add_argument("--mapping", required=True)
     ap.add_argument("--out", required=True)
@@ -49,16 +53,22 @@ def main() -> int:
     if not layout.startswith("category:"):
         print(f"ERROR: layout must be category:<key>, got {layout}", file=sys.stderr)
         return 2
-    category = layout.split(":",1)[1]
+    category = layout.split(":", 1)[1]
 
     data = json.loads(in_path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
-        print(f"ERROR: top-level JSON is not object: {type(data).__name__}", file=sys.stderr)
+        print(
+            f"ERROR: top-level JSON is not object: {type(data).__name__}",
+            file=sys.stderr,
+        )
         return 3
 
     items = data.get(category)
     if not isinstance(items, list):
-        print(f"ERROR: category={category} is not array: {type(items).__name__}", file=sys.stderr)
+        print(
+            f"ERROR: category={category} is not array: {type(items).__name__}",
+            file=sys.stderr,
+        )
         return 4
 
     out_nd.parent.mkdir(parents=True, exist_ok=True)
@@ -75,7 +85,7 @@ def main() -> int:
         for obj in items:
             if not isinstance(obj, dict):
                 continue
-            sid = str(obj.get("id","") or "").strip()
+            sid = str(obj.get("id", "") or "").strip()
             if not sid:
                 skipped_no_id += 1
                 continue
@@ -110,7 +120,7 @@ def main() -> int:
                     "image": obj.get("image") or obj.get("img_url"),
                 },
                 "raw": {
-                    "category_key": category
+                    "category_key": category,
                 },
             }
             w.write(json.dumps(rec, ensure_ascii=False) + "\n")
@@ -122,6 +132,7 @@ def main() -> int:
         "supplier_id": "centrshin",
         "parser_id": f"centrshin__{category}__json_v1",
         "layout": f"category:{category}",
+        "category_key": category,
         "lines": emitted,
         "seen_items": seen,
         "emitted_items": emitted,
@@ -132,6 +143,7 @@ def main() -> int:
     }
     _atomic_write_text(out_st, json.dumps(stats, ensure_ascii=False, indent=2))
     return 0
+
 
 if __name__ == "__main__":
     raise SystemExit(main())
