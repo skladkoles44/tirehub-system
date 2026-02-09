@@ -1,0 +1,6 @@
+mapping_schema_version: "1.0"
+supplier_id: "brinex"
+format: "xlsx"
+emitter: "scripts/ingestion/brinex/emit_brinex_xlsx_v1.py"
+notes:
+  - "Brinex b2bbr.xlsx has many sheets; router runs per sheet as category:<slug>."

@@ -56,3 +56,4 @@ offers_v1/tmp/*
 !offers_v1/tmp/.gitkeep*
 !offers_v1/tmp/*
 !offers_v1/tmp/.gitkeep.gitkeep
+.venv_path
