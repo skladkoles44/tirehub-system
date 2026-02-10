@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+import yaml
 from openpyxl import load_workbook
 
 
@@ -32,7 +33,6 @@ def _as_float(x: Any) -> Optional[float]:
 
 
 def _as_int_qty(x: Any) -> tuple[Optional[int], Optional[int], Optional[str]]:
-    # returns: (qty, qty_lower_bound, qty_raw)
     if x is None:
         return (None, None, None)
     if isinstance(x, (int, float)):
@@ -46,76 +46,58 @@ def _as_int_qty(x: Any) -> tuple[Optional[int], Optional[int], Optional[str]]:
     m = re.match(r"^>\s*(\d+)\s*$", s)
     if m:
         lb = int(m.group(1))
-        # conservative: use lower bound as qty, and keep raw+lb in raw fields
         return (lb, lb, s)
-    # try plain int
     try:
         return (int(float(s.replace(",", ".").replace(" ", ""))), None, s)
     except Exception:
         return (None, None, s)
 
 
-def _slug(s: str) -> str:
-    s = s.strip().lower()
-    s = re.sub(r"\s+", "-", s)
-    s = re.sub(r"[^a-z0-9а-яё\-_]+", "", s, flags=re.IGNORECASE)
-    s = s.replace("ё", "е")
-    return s[:120] if s else "unknown"
-
-
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--file", required=True)
-    ap.add_argument("--layout", required=True)  # expects category:<key>
-    ap.add_argument("--sheet", required=True)  # original sheet name
+    ap.add_argument("--layout", required=True)      # category:<key>
+    ap.add_argument("--sheet", required=True)
     ap.add_argument("--run-id", required=True)
     ap.add_argument("--mapping", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--stats-out", required=True)
+    ap.add_argument("--max-rows", type=int, default=None)
+    ap.add_argument("--heartbeat", type=int, default=1000)
     args = ap.parse_args()
 
-    in_path = Path(args.file)
-    out_nd = Path(args.out)
-    out_st = Path(args.stats_out)
-
-    layout = str(args.layout).strip()
-    if not layout.startswith("category:"):
-        print(f"ERROR: layout must be category:<key>, got {layout}", file=sys.stderr)
+    if not args.layout.startswith("category:"):
+        print("ERROR: layout must be category:<key>", file=sys.stderr)
         return 2
-    category_key = layout.split(":", 1)[1].strip()
-    sheet_name = str(args.sheet)
 
-    # Load workbook (read_only for speed; data_only to get computed values if present)
-    wb = load_workbook(in_path, read_only=True, data_only=True)
+    category_key = args.layout.split(":", 1)[1]
+    sheet_name = args.sheet
+    t0 = time.time()
+
+    # mapping defaults
+    with open(args.mapping, "r", encoding="utf-8") as f:
+        mapping = yaml.safe_load(f) or {}
+    defaults = mapping.get("defaults", {})
+    header_row = int(defaults.get("header_row", 6))
+    data_row = int(defaults.get("data_row", header_row + 1))
+
+    wb = load_workbook(args.file, read_only=True, data_only=True)
     if sheet_name not in wb.sheetnames:
         print(f"ERROR: sheet not found: {sheet_name}", file=sys.stderr)
         return 3
     ws = wb[sheet_name]
 
-    # Find header row: first cell == "Код товара (goods_id)"
-    header_row = None
-    for r in range(1, min(80, ws.max_row or 1) + 1):
-        v = ws.cell(row=r, column=1).value
-        if isinstance(v, str) and v.strip() == "Код товара (goods_id)":
-            header_row = r
-            break
-    if header_row is None:
-        print("ERROR: header row not found (A=='Код товара (goods_id)')", file=sys.stderr)
-        return 4
-
-    # Build col map from header row
+    # header map
+    header_cells = next(ws.iter_rows(min_row=header_row, max_row=header_row, values_only=True))
     col_map: Dict[str, int] = {}
-    for c in range(1, (ws.max_column or 1) + 1):
-        hv = ws.cell(row=header_row, column=c).value
-        if isinstance(hv, str):
-            key = hv.strip()
-            if key:
-                col_map[key] = c
+    for idx, v in enumerate(header_cells):
+        if isinstance(v, str) and v.strip():
+            col_map[v.strip()] = idx
 
     def col(name: str) -> Optional[int]:
         return col_map.get(name)
 
-    need = [
+    required = [
         "Код товара (goods_id)",
         "Номенклатура",
         "Артикул",
@@ -123,117 +105,81 @@ def main() -> int:
         "Склад",
         "Остаток на складе",
     ]
-    missing = [n for n in need if col(n) is None]
+    missing = [x for x in required if col(x) is None]
     if missing:
-        print(f"ERROR: missing required columns: {missing}", file=sys.stderr)
+        print(f"ERROR: missing columns: {missing}", file=sys.stderr)
         return 5
 
-    c_goods = col("Код товара (goods_id)") or 1
-    c_name = col("Номенклатура") or 2
-    c_product = col("Код товара (product_id)")
-    c_article = col("Артикул") or 4
-    c_kind = col("Вид товара")
-    c_price = col("Цена") or 9
-    c_price_r = col("Розница")
-    c_qty_total = col("Остаток общий")
-    c_wh = col("Склад") or 8
-    c_qty_wh = col("Остаток на складе") or 10
+    c_goods = col("Код товара (goods_id)")
+    c_name = col("Номенклатура")
+    c_article = col("Артикул")
+    c_price = col("Цена")
+    c_wh = col("Склад")
+    c_qty = col("Остаток на складе")
 
-    emitted = 0
-    seen = 0
-    skipped_no_id = 0
-    skipped_qty_empty = 0
-    bad_price = 0
-    bad_qty = 0
-
+    out_nd = Path(args.out)
     out_nd.parent.mkdir(parents=True, exist_ok=True)
     tmp_nd = out_nd.with_suffix(out_nd.suffix + ".tmp")
 
-    # Data rows start after header_row + 2 (usually numeric row exists)
-    start_r = header_row + 2
+    emitted = seen = bad_price = bad_qty = 0
+    max_rows = args.max_rows
 
     with tmp_nd.open("w", encoding="utf-8") as w:
-        for r in range(start_r, (ws.max_row or start_r) + 1):
-            goods_id = ws.cell(row=r, column=c_goods).value
+        for idx, row in enumerate(ws.iter_rows(min_row=data_row, values_only=True), start=1):
+            if max_rows and idx > max_rows:
+                break
+
+            goods_id = row[c_goods]
             if goods_id is None:
                 continue
             seen += 1
-            sid = str(goods_id).strip()
-            if sid == "":
-                skipped_no_id += 1
-                continue
 
-            name = ws.cell(row=r, column=c_name).value
-            article = ws.cell(row=r, column=c_article).value
-            product_id = ws.cell(row=r, column=c_product).value if c_product else None
-            kind = ws.cell(row=r, column=c_kind).value if c_kind else None
-
-            wh = ws.cell(row=r, column=c_wh).value
-            wh_name = str(wh).strip() if wh is not None else ""
-            if wh_name == "":
-                wh_name = "UNKNOWN"
-
-            qty_val = ws.cell(row=r, column=c_qty_wh).value
-            qty, qty_lb, qty_raw = _as_int_qty(qty_val)
+            qty, _, _ = _as_int_qty(row[c_qty])
             if qty is None or qty <= 0:
-                if qty_raw not in (None, "", "0"):
-                    bad_qty += 1
-                else:
-                    skipped_qty_empty += 1
+                bad_qty += 1
                 continue
 
-            price_val = ws.cell(row=r, column=c_price).value
-            price = _as_float(price_val)
+            price = _as_float(row[c_price])
             if price is None or price <= 0:
                 bad_price += 1
                 continue
 
-            rec: Dict[str, Any] = {
+            rec = {
                 "supplier_id": "brinex",
                 "parser_id": f"brinex__{category_key}__xlsx_v1",
                 "layout": f"category:{category_key}",
-                "ts_ingested": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime()),
+                "ts_ingested": time.strftime("%Y-%m-%dT%H:%M:%S"),
                 "item": {
-                    "supplier_item_id": sid,
-                    "name": str(name).strip() if name is not None else None,
-                    "article": str(article).strip() if article is not None else None,
+                    "supplier_item_id": str(goods_id).strip(),
+                    "name": str(row[c_name]).strip() if row[c_name] else None,
+                    "article": str(row[c_article]).strip() if row[c_article] else None,
                     "qty": qty,
                     "price_opt": price,
                     "currency": "RUB",
                 },
                 "raw": {
-                    "category_key": category_key,
-                    "sheet_name": sheet_name,
-                    "warehouse_name": wh_name,
-                    "goods_id": goods_id,
-                    "product_id": product_id,
-                    "kind": kind,
-                    "qty_raw": qty_raw,
-                    "qty_lower_bound": qty_lb,
-                    "price_roznica": _as_float(ws.cell(row=r, column=c_price_r).value) if c_price_r else None,
-                    "qty_total": ws.cell(row=r, column=c_qty_total).value if c_qty_total else None,
+                    "sheet": sheet_name,
+                    "warehouse": row[c_wh],
                 },
             }
             w.write(json.dumps(rec, ensure_ascii=False) + "\n")
             emitted += 1
 
+            if args.heartbeat and idx % args.heartbeat == 0:
+                print(f"[{category_key}] rows={idx} seen={seen} emitted={emitted}", file=sys.stderr)
+
     tmp_nd.replace(out_nd)
 
     stats = {
-        "supplier_id": "brinex",
-        "parser_id": f"brinex__{category_key}__xlsx_v1",
-        "layout": f"category:{category_key}",
         "category_key": category_key,
         "sheet_name": sheet_name,
-        "lines": emitted,
-        "seen_items": seen,
-        "emitted_items": emitted,
-        "skipped_no_id": skipped_no_id,
-        "skipped_qty_empty": skipped_qty_empty,
+        "rows_seen": seen,
+        "rows_emitted": emitted,
         "bad_price": bad_price,
         "bad_qty": bad_qty,
+        "elapsed_sec": round(time.time() - t0, 1),
     }
-    _atomic_write_text(out_st, json.dumps(stats, ensure_ascii=False, indent=2))
+    _atomic_write_text(Path(args.stats_out), json.dumps(stats, ensure_ascii=False, indent=2))
     return 0
 
 
