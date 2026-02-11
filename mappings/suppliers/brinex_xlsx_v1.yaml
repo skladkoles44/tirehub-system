@@ -1,6 +1,53 @@
-mapping_schema_version: "1.0"
 supplier_id: "brinex"
-format: "xlsx"
-emitter: "scripts/ingestion/brinex/emit_brinex_xlsx_v1.py"
-notes:
-  - "Brinex b2bbr.xlsx has many sheets; router runs per sheet as category:<slug>."
+parser_id: "brinex__xlsx_v1"
+mapping_schema_version: "1.0"
+mapping_version: "2026-02-09.all-sheets"
+
+format:
+  kind: "xlsx"
+  engine: "openpyxl"
+
+defaults:
+  header_row: 6
+  data_row: 7
+
+categories:
+  sheet01: { sheet_name: "Автошины сельскохозяйственные" }
+  sheet02: { sheet_name: "Камеры для мотошин" }
+  sheet03: { sheet_name: "Аккумуляторы легковые" }
+  sheet04: { sheet_name: "Аккумуляторы грузовые" }
+  sheet05: { sheet_name: "Аккумуляторы мото" }
+  sheet06: { sheet_name: "Мотохимия" }
+  sheet07: { sheet_name: "Ароматизаторы" }
+  sheet08: { sheet_name: "Автохимия" }
+  sheet09: { sheet_name: "Автокамеры" }
+  sheet10: { sheet_name: "Автосигнализации" }
+  sheet11: { sheet_name: "Проставки" }
+  sheet12: { sheet_name: "Квадрошина" }
+  sheet13: { sheet_name: "Расходные материалы" }
+  sheet14: { sheet_name: "Автошины" }
+  sheet15: { sheet_name: "Брызговики" }
+  sheet16: { sheet_name: "Автодиски" }
+  sheet17: { sheet_name: "Кольца установочные" }
+  sheet18: { sheet_name: "Автошины грузовые" }
+  sheet19: { sheet_name: "Автошины индустриальные" }
+  sheet20: { sheet_name: "Колесо в сборе виртуальное" }
+  sheet21: { sheet_name: "Автоковрики" }
+  sheet22: { sheet_name: "Секретки" }
+  sheet23: { sheet_name: "Все для зимы" }
+  sheet24: { sheet_name: "Масла" }
+  sheet25: { sheet_name: "Мотошины" }
+  sheet26: { sheet_name: "Инструмент для сервиса" }
+  sheet27: { sheet_name: "Автодиски грузовые" }
+  sheet28: { sheet_name: "Огнетушители" }
+  sheet29: { sheet_name: "Автолампы" }
+  sheet30: { sheet_name: "Салфетки и губки" }
+  sheet31: { sheet_name: "Аккумуляторы" }
+  sheet32: { sheet_name: "Знаки аварийные" }
+  sheet33: { sheet_name: "Мотозапчасти" }
+  sheet34: { sheet_name: "Датчики давления шин" }
+  sheet35: { sheet_name: "Шторки солнцезащитные" }
+  sheet36: { sheet_name: "Колесо в сборе для прицепа" }
+  sheet37: { sheet_name: "Спецодежда" }
+  sheet38: { sheet_name: "Автокомпрессоры" }
+  sheet39: { sheet_name: "Worksheet" }
