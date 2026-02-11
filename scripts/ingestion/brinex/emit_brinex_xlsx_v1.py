@@ -28,7 +28,7 @@ def _as_float(x: Any) -> Optional[float]:
         return None
     try:
         return float(s)
-    except Exception:
+    except (ValueError, TypeError):
         return None
 
 
@@ -38,7 +38,7 @@ def _as_int_qty(x: Any) -> tuple[Optional[int], Optional[int], Optional[str]]:
     if isinstance(x, (int, float)):
         try:
             return (int(float(x)), None, None)
-        except Exception:
+        except (ValueError, TypeError):
             return (None, None, str(x))
     s = str(x).strip()
     if s == "":
@@ -49,8 +49,29 @@ def _as_int_qty(x: Any) -> tuple[Optional[int], Optional[int], Optional[str]]:
         return (lb, lb, s)
     try:
         return (int(float(s.replace(",", ".").replace(" ", ""))), None, s)
-    except Exception:
+    except (ValueError, TypeError):
         return (None, None, s)
+
+
+def _write_skip_outputs(out_nd: Path, out_stats: Path, category_key: str, sheet_name: str, reason: str) -> None:
+    out_nd.parent.mkdir(parents=True, exist_ok=True)
+    # empty ndjson (but valid file)
+    tmp_nd = out_nd.with_suffix(out_nd.suffix + ".tmp")
+    tmp_nd.write_text("", encoding="utf-8")
+    tmp_nd.replace(out_nd)
+
+    stats = {
+        "category_key": category_key,
+        "sheet_name": sheet_name,
+        "status": "SKIP",
+        "reason": reason,
+        "rows_seen": 0,
+        "rows_emitted": 0,
+        "bad_price": 0,
+        "bad_qty": 0,
+        "elapsed_sec": 0.0,
+    }
+    _atomic_write_text(out_stats, json.dumps(stats, ensure_ascii=False, indent=2))
 
 
 def main() -> int:
@@ -70,14 +91,17 @@ def main() -> int:
         print("ERROR: layout must be category:<key>", file=sys.stderr)
         return 2
 
-    category_key = args.layout.split(":", 1)[1]
-    sheet_name = args.sheet
+    category_key = args.layout.split(":", 1)[1].strip()
+    sheet_name = str(args.sheet)
     t0 = time.time()
+
+    out_nd = Path(args.out)
+    out_st = Path(args.stats_out)
 
     # mapping defaults
     with open(args.mapping, "r", encoding="utf-8") as f:
         mapping = yaml.safe_load(f) or {}
-    defaults = mapping.get("defaults", {})
+    defaults = mapping.get("defaults", {}) or {}
     header_row = int(defaults.get("header_row", 6))
     data_row = int(defaults.get("data_row", header_row + 1))
 
@@ -87,8 +111,15 @@ def main() -> int:
         return 3
     ws = wb[sheet_name]
 
-    # header map
-    header_cells = next(ws.iter_rows(min_row=header_row, max_row=header_row, values_only=True))
+    # header map (SAFE for empty sheet / missing header row)
+    try:
+        header_cells = next(ws.iter_rows(min_row=header_row, max_row=header_row, values_only=True))
+    except StopIteration:
+        # sheet has no such row -> safe skip
+        _write_skip_outputs(out_nd, out_st, category_key, sheet_name, "no header row")
+        print(f"[{category_key}] SKIP: no header row", file=sys.stderr)
+        return 0
+
     col_map: Dict[str, int] = {}
     for idx, v in enumerate(header_cells):
         if isinstance(v, str) and v.strip():
@@ -107,8 +138,10 @@ def main() -> int:
     ]
     missing = [x for x in required if col(x) is None]
     if missing:
-        print(f"ERROR: missing columns: {missing}", file=sys.stderr)
-        return 5
+        # if header exists but structure differs -> treat as skip, not crash
+        _write_skip_outputs(out_nd, out_st, category_key, sheet_name, f"missing columns: {missing}")
+        print(f"[{category_key}] SKIP: missing columns: {missing}", file=sys.stderr)
+        return 0
 
     c_goods = col("Код товара (goods_id)")
     c_name = col("Номенклатура")
@@ -117,11 +150,13 @@ def main() -> int:
     c_wh = col("Склад")
     c_qty = col("Остаток на складе")
 
-    out_nd = Path(args.out)
     out_nd.parent.mkdir(parents=True, exist_ok=True)
     tmp_nd = out_nd.with_suffix(out_nd.suffix + ".tmp")
 
-    emitted = seen = bad_price = bad_qty = 0
+    emitted = 0
+    seen = 0
+    bad_price = 0
+    bad_qty = 0
     max_rows = args.max_rows
 
     with tmp_nd.open("w", encoding="utf-8") as w:
@@ -129,17 +164,17 @@ def main() -> int:
             if max_rows and idx > max_rows:
                 break
 
-            goods_id = row[c_goods]
+            goods_id = row[c_goods] if c_goods is not None else None
             if goods_id is None:
                 continue
             seen += 1
 
-            qty, _, _ = _as_int_qty(row[c_qty])
+            qty, _, _ = _as_int_qty(row[c_qty] if c_qty is not None else None)
             if qty is None or qty <= 0:
                 bad_qty += 1
                 continue
 
-            price = _as_float(row[c_price])
+            price = _as_float(row[c_price] if c_price is not None else None)
             if price is None or price <= 0:
                 bad_price += 1
                 continue
@@ -151,15 +186,15 @@ def main() -> int:
                 "ts_ingested": time.strftime("%Y-%m-%dT%H:%M:%S"),
                 "item": {
                     "supplier_item_id": str(goods_id).strip(),
-                    "name": str(row[c_name]).strip() if row[c_name] else None,
-                    "article": str(row[c_article]).strip() if row[c_article] else None,
+                    "name": str(row[c_name]).strip() if (c_name is not None and row[c_name]) else None,
+                    "article": str(row[c_article]).strip() if (c_article is not None and row[c_article]) else None,
                     "qty": qty,
                     "price_opt": price,
                     "currency": "RUB",
                 },
                 "raw": {
                     "sheet": sheet_name,
-                    "warehouse": row[c_wh],
+                    "warehouse": row[c_wh] if c_wh is not None else None,
                 },
             }
             w.write(json.dumps(rec, ensure_ascii=False) + "\n")
@@ -173,13 +208,14 @@ def main() -> int:
     stats = {
         "category_key": category_key,
         "sheet_name": sheet_name,
+        "status": "OK",
         "rows_seen": seen,
         "rows_emitted": emitted,
         "bad_price": bad_price,
         "bad_qty": bad_qty,
         "elapsed_sec": round(time.time() - t0, 1),
     }
-    _atomic_write_text(Path(args.stats_out), json.dumps(stats, ensure_ascii=False, indent=2))
+    _atomic_write_text(out_st, json.dumps(stats, ensure_ascii=False, indent=2))
     return 0
 
 
