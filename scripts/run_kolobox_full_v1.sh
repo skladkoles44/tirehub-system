@@ -174,7 +174,7 @@ mkdir -p "$CUR_OUT_DIR"
   --manifest "$MANIFEST_JSON" \
   --out-dir "$CUR_OUT_DIR"
 
-CURATED_NDJSON="$CUR_OUT_DIR/curated.ndjson"
+CURATED_NDJSON="$CUR_OUT_DIR/$RUN_ID/curated.ndjson"
 test -s "$CURATED_NDJSON" || { echo "NOT_FOUND: $CURATED_NDJSON"; ls -la "$CUR_OUT_DIR" || true; exit 1; }
 echo "CURATED_SHA256: $(sha256sum "$CURATED_NDJSON" | awk '{print $1}')"
 echo
