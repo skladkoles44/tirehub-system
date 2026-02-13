@@ -1,65 +1,30 @@
-# tirehub-system
+# tirehub-system. этап ingestion
 
-ETL-система для приёма прайс-листов поставщиков и построения витрины поверх проверенных данных.
+ETL-компонент для обработки и нормализации входных файлов.
 
-Ключевая модель:  
-**SSOT (append-only journal) + NDJSON-first**  
-Бизнес-логика допускается только в слое Curated / Offers.
+Компонент преобразует исходные данные различных форматов из разных файлов в структурированный слой (SSOT), предназначенный для дальнейшего использования прикладными сервисами.
 
----
+Текущий фокус — корректная экстракция, техническая валидация и стабильная запись фактов.
 
-# Canon
+## Architecture (ingestion stage)
 
-- **ETL CANON V1 (SSOT / Marketplace-ready):** `docs/etl/ETL_CANON_V1.md`
-- **Architecture lock v1:** `ARCHITECTURE_v1_LOCK.md`
+Extractor → Emitter → Gate → Ingestion → SSOT
 
-Canon — источник истины по архитектуре и контрактам.
+## Environments
 
----
+PHONE / TEST / PROD — одинаковая структура, отличается только ETL_BASE.
 
-# Alignment Plan
+## Git
 
-- **Canon Alignment Plan v1:** `docs/etl/PLAN_CANON_ALIGNMENT_V1.md`
+- main — стабильная ветка
+- test — рабочая ветка разработки
 
-План приведения реализации к ETL Canon V1.  
-Содержит milestones, definition-of-done и критерии соответствия.
-
----
-
-# Pipeline Model
-
-Extractor → Emitter → Gate → Ingestion → Curated / Offers
-
----
-
-# Run (example: Kolobox)
-
-VPS (etl):
-
-```bash
-scripts/run_kolobox_full_v1.sh
-Pipeline: emitter → gate → ingest → curated
-Repo Layout
-docs/ — спецификации и канон
-mappings/ — mapping-файлы
-inputs/ — локальные входные файлы (не коммитить)
-out/ — локальные артефакты (не коммитить)
-Status
-Canon v1 active
-Architecture v1 locked
-Alignment in progress
-
-## Test Environment
-
-- docs/etl/ETL_CANON_TEST.md — Test environment contract (branch: test)
-
-
-Docs
+## Docs
 
 - docs/etl/ETL_CANON.md — Production Canon
+- docs/etl/ETL_CANON_TEST.md — Test environment contract
 
-
-Archive
+## Archive
 
 - docs/etl/archive/ETL_CANON_V1.md
 - docs/etl/archive/ETL_CANON_V1_QA.md
