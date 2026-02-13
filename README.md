@@ -25,5 +25,6 @@ PHONE / TEST / PROD — одинаковая структура, отличае�
 
 ## Archive
 
+- docs/etl/archive/
 - docs/etl/archive/ETL_CANON_V1.md
 - docs/etl/archive/ETL_CANON_V1_QA.md
