@@ -19,9 +19,8 @@ PHONE / TEST / PROD — одинаковая структура, отличае�
 - main — стабильная ветка
 - test — рабочая ветка разработки
 
-## Docs
+## Docs (test branch)
 
-- docs/etl/ETL_CANON.md — Production Canon
 - docs/etl/ETL_CANON_TEST.md — Test environment contract
 
 ## Archive
