@@ -1,19 +1,29 @@
-# tirehub-system
+# tirehub-system. этап ingestion
 
-ETL-система для приёма прайс-листов поставщиков и построения витрины поверх проверенных данных.  
-Ключевой принцип: SSOT (append-only) + NDJSON-first, бизнес-логика только в Curated/Offers.
+ETL-компонент для обработки и нормализации входных файлов.
+
+Компонент преобразует исходные данные различных форматов из разных файлов в структурированный слой (SSOT), предназначенный для дальнейшего использования прикладными сервисами.
+
+Текущий фокус — корректная экстракция, техническая валидация и стабильная запись фактов.
+
+## Architecture (ingestion stage)
+
+Extractor → Emitter → Gate → Ingestion → SSOT
+
+## Environments
+
+PHONE / TEST / PROD — одинаковая структура, отличается только ETL_BASE.
+
+## Git
+
+- main — стабильная ветка
+- test — рабочая ветка разработки
 
 ## Docs
-- **ETL Canon v1 (обязателен)**: [docs/etl/ETL_CANON_V1.md](docs/etl/ETL_CANON_V1.md)
 
-## Architecture
-Emitter → Gate → Ingestion → Curated / Offers
+- (здесь будет ссылка на прод-канон)
 
-## Run (Kolobox end-to-end)
-- VPS (etl): scripts/run_kolobox_full_v1.sh (emitter → gate → ingest → curated)
+## Archive
 
-## Repo layout (WIP)
-- `docs/` — спецификации и контракты
-- `mappings/` — mapping-файлы поставщиков
-- `inputs/` — входные файлы (локально/не коммитить)
-- `out/` — артефакты прогонов (локально/не коммитить)
+- docs/etl/archive/ETL_CANON_V1.md
+- docs/etl/archive/ETL_CANON_V1_QA.md
