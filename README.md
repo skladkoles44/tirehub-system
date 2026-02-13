@@ -48,3 +48,18 @@ Status
 Canon v1 active
 Architecture v1 locked
 Alignment in progress
+
+## Test Environment
+
+- docs/etl/ETL_CANON_TEST.md — Test environment contract (branch: test)
+
+
+Docs
+
+- docs/etl/ETL_CANON.md — Production Canon
+
+
+Archive
+
+- docs/etl/archive/ETL_CANON_V1.md
+- docs/etl/archive/ETL_CANON_V1_QA.md
