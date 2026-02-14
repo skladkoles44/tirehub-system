@@ -1,279 +1,367 @@
-# ETL CANON (Production)
+ETL CANON. этап ingestion
 
-Документ описывает обязательный контракт прод-системы ETL.
-Любое отклонение считается нарушением канона.
+1. Назначение
 
----
+Компонент ingestion предназначен для:
 
-## 1. Принципы
+- приёма входных файлов
+- технической проверки их структуры и целостности
+- построчной нормализации и классификации строк
+- записи фактов
+- публикации актуального технического состояния (state)
 
-1. SSOT — единственный источник истины.
-2. SSOT append-only.
-3. run_id генерируется автоматически.
-4. filename — метаданные, не идентификатор.
-5. Gate не содержит бизнес-логики.
-6. Data Quality обязательна.
-7. Manifest в SSOT — единственная authoritative версия.
-8. Retention управляется политикой.
-9. Disk Pressure не может уничтожать SSOT.
+Документ описывает только ingestion-контур.
+Бизнес-логика и прикладные сервисы сюда не входят.
 
----
+State — единственный публикуемый слой для downstream-потребителей.
+Run-артефакты, quarantine и manifest — операционный след с ограниченным сроком хранения.
 
-## 2. Структура каталогов (prod)
 
-/home/etl/
+2. Модель данных
 
-repo/tirehub-system
+2.1 FULL SNAPSHOT
 
-etl_data/
-  raw_v1/
-    inbox/<supplier>/
-    quarantine/<supplier>/
-      duplicates/
-      failed_gate/
-    archive/
-    ssot/
-      runs/<run_id>/
-      accepted_runs/
-      locks/
-      manifests/
+Каждый входной файл обязан представлять полный актуальный срез данных (FULL SNAPSHOT).
 
-  curated_v1/
+Это означает:
 
-etl_ops/
+- файл описывает всё текущее состояние
+- если SKU отсутствует в файле → остаток считается 0
+- дельта-файлы запрещены
+
+Нарушение этого правила считается нарушением контракта поставки данных.
+
+
+2.2 Replace State Model
+
+Только успешный PASS-run публикует новое состояние.
+
+Публикация происходит как полная замена предыдущего состояния для данного supplier.
+
+Промежуточные снапшоты не сохраняются как активные.
+
+
+3. Структура каталогов (Production)
+
+etl_data/raw_v1/
+  inbox/<supplier>/
+  quarantine/<supplier>/
+    duplicates/
+    broken/
+  archive/<supplier>/
+    obsolete/
+  accepted_runs/<supplier>/<sha_prefix2>/<sha256>.json
   runs/<run_id>/
-  diag/
-  tmp/
-  config/
+    facts.ndjson
+    bad.ndjson
+    stats.json
+    manifest.json
+    diag/                    # опционально, retention 3–7 дней
+  state_store/<supplier>/<run_id>/
+    facts.ndjson
+  state/current/<supplier>              # POSIX: symlink
+  state/current/<supplier>.json         # Object storage pointer
 
----
+DQ-конфиг:
+etl_ops/config/<supplier>.yaml
 
-## 3. Inbox Model
 
-### 3.1 Разрешено
+4. Inbox Model
 
-- ≥1 файлов
-- одинаковые имена
-- произвольное время поступления
-
-### 3.2 Выбор файла
+4.1 Выбор файла
 
 Алгоритм:
 
-1. Берём все файлы supplier.
-2. Сортировка: mtime desc.
-3. Проверка SHA256.
-4. Если (supplier, sha256) уже в accepted_runs:
-   - событие DUPLICATE_INPUT
-   - файл → quarantine/<supplier>/duplicates/
-   - продолжить цикл.
-5. Первый уникальный файл → selected_file.
-6. Остальные остаются в inbox.
+1. Получить список файлов из inbox/<supplier>/
+2. Отсортировать по mtime desc
+3. Вычислить SHA256 для каждого файла
+4. Файлы, SHA которых уже присутствует в accepted_runs → переместить в quarantine/<supplier>/duplicates/
+5. Среди оставшихся выбрать самый свежий уникальный файл
+6. Все остальные уникальные файлы этого supplier переместить в archive/<supplier>/obsolete/
+7. Обработать только выбранный файл
 
-Важно: обрабатывается один файл за запуск.
+Inbox должен оставаться чистым.
 
----
+mtime используется только как эвристика порядка.
+Истинная хронология определяется run_id.
 
-## 4. run_id
+Если в inbox одновременно присутствуют несколько уникальных файлов одного supplier, обрабатывается только самый свежий.
+Промежуточные снапшоты сознательно пропускаются и архивируются как obsolete в рамках Replace State Model.
+
+
+4.2 File Stability Rule
+
+Файл считается готовым к обработке, если:
+
+- его размер не менялся за последние file_stability_window секунд (default 30)
+  или
+- используется атомарный rename (.tmp → финальное имя)
+
+Цель — предотвратить чтение недокачанного файла.
+
+
+5. Lock per supplier
+
+Оркестрация обязана обеспечивать взаимоисключение запусков для одного supplier.
+
+Параллельные run запрещены.
+
+
+6. run_id
 
 Формат:
 
-<supplier>_<YYYYMMDDTHHMMSSZ>
+<supplier>_<YYYYMMDDTHHMMSSZ>_<rand6>
 
-- UTC
-- обязательно Z
-- генерируется системой
-- ручное формирование запрещено
+Требования:
 
----
+- UTC, обязательно суффикс Z
+- rand6 — 6 hex-символов [0-9a-f]
+- уникальность гарантируется генератором
 
-## 5. Gate (технический)
 
-Gate проверяет:
+7. Gate (технический + schema check)
 
-- файл существует
-- размер > 0
-- читаемость
-- корректность формата
-- checksum вычисляется
+FAIL если:
 
-Если пустой файл → FAIL.
+- файл отсутствует
+- размер == 0
+- файл не читается
+- формат не распознан
+- обязательные колонки отсутствуют
+- header не соответствует ожидаемой структуре
 
-Gate не содержит бизнес-правил.
+При FAIL:
 
----
+- файл перемещается в quarantine/<supplier>/broken/
+- имя сохраняется (допустимо добавление суффикса .failed)
+- state не публикуется
+- создаётся manifest со status=FAIL
 
-## 6. Emit
+Gate не содержит бизнес-логики.
 
-Результаты:
 
-- facts.ndjson
-- bad.ndjson
-- run.manifest.json
-- run.stats.json
+8. Data Quality (DQ)
 
-### 6.1 Форматы
+Конфиг per-supplier обязателен:
 
-fact (минимум)
-
-{
-"run_id": "...",
-"supplier": "...",
-"row_id": "...",
-"payload": {...}
-}
-
-bad
-
-{
-"run_id": "...",
-"supplier": "...",
-"row_number": 123,
-"reason": "..."
-}
-
-manifest
-
-{
-"run_id": "...",
-"supplier": "...",
-"input_sha256": "...",
-"input_filename": "...",
-"started_at": "...",
-"finished_at": "...",
-"fact_count": 12345,
-"bad_count": 34,
-"status": "PASS|FAIL"
-}
-
-Manifest хранится только в:
-
-etl_data/raw_v1/ssot/runs/<run_id>/run.manifest.json
-
-Это единственная authoritative версия.
-
-etl_ops/runs/<run_id>/ может содержать symlink.
-
----
-
-## 7. SSOT
-
-Append-only.
-
-Запрещено:
-
-- удалять runs
-- изменять manifest
-- перезаписывать facts
-
-Индекс дедупликации:
-
-accepted_runs/
-<supplier>_<sha256>.json
-
----
-
-## 8. Data Quality (обязательно для prod)
-
-DQ выполняется в каждом run.
-
-Обязательные пороги:
-
-- max_bad_ratio
 - min_fact_count
-- max_fact_count_delta
+- max_bad_ratio
+- allow_empty_snapshot: true|false
 
-Если пороги не заданы → FAIL конфигурации.
-Если превышены → FAIL run.
+Формула:
 
-empty_file не является метрикой DQ — это FAIL в Gate.
+bad_ratio = bad_rows / (good_rows + bad_rows)
 
----
+Если конфиг отсутствует → FAIL (CONFIG_DQ_MISSING).
 
-## 9. Retention
+Если allow_empty_snapshot = true → snapshot с 0 facts допустим.
+Иначе 0 facts → FAIL.
 
-### 9.1 Никогда не удаляются
+Рекомендуемые значения:
 
-- ssot/
-- accepted_runs/
+- min_fact_count ≥ 1
+- max_bad_ratio ≤ 0.10
 
-### 9.2 Удаляются автоматически
 
-Класс — Retention
+9. Run-артефакты
 
-- archive — configurable (default 90d)
-- quarantine — 30d
-- etl_ops/runs — configurable (default 180d)
-- diag — 30d
-- tmp — 7d
+Хранятся в runs/<run_id>/
 
-Quarantine имеет retention.
-Forensic hold допускается только вручную.
+9.1 facts.ndjson
 
----
+Каждая строка обязана содержать:
 
-## 10. Disk Pressure Policy
+- run_id
+- supplier
+- payload
 
-Если свободное место < threshold:
+При multi-category:
 
-Порядок удаления:
+- category_key
 
-1. archive
-2. quarantine
-3. diag
-4. etl_ops/tmp
-5. etl_ops/runs
+Допускаются:
 
-SSOT — никогда.
+- row_id
+- row_number
 
----
+Пример:
 
-## 11. tmp
+{
+  "run_id": "brinex_20260213T194500Z_1a2b3c",
+  "supplier": "brinex",
+  "category_key": "sheet14",
+  "row_id": "a94a8fe5...",
+  "payload": {
+    "sku": "ABC123",
+    "qty": 5,
+    "price_minor": 10000
+  }
+}
 
-- используется только во время run
-- очищается после run
-- retention 7 дней
-- участвует в Disk Pressure после diag
+Файл facts.ndjson является самодостаточным.
 
----
+Рекомендуется нормализовать денежные значения в payload до:
+- integer в minor units (копейки, поле price_minor)
+- либо строки фиксированной точности ("100.00")
 
-## 12. Оркестрация
+Использование float не рекомендуется из-за потенциальной потери точности при сериализации.
 
-- Один entrypoint.
-- Ручной запуск допустим.
-- run_id генерируется системой.
-- Параллельные run для одного supplier запрещены.
 
----
+9.2 row_id
 
-## 13. Конфигурация
+row_id = sha256(canonical_json_string(payload))
 
-etl_ops/config/
+run_id в вычисление не входит.
 
-- вне repo
-- chmod 600
-- owner etl
-- содержит DQ thresholds
-- secrets запрещены в коде
+canonical_json_string:
 
----
+- ключи сортируются
+- JSON сериализуется без пробелов
+- null-поля сохраняются для сохранения структуры данных
+- сериализация должна быть детерминированной
 
-## 14. Запрещено
 
-- использовать filename как идентификатор
-- читать manifest из etl_ops как источник истины
-- изменять SSOT
-- запускать без DQ-порогов
-- хранить секреты в repo
+9.3 bad.ndjson
 
----
+Содержит:
 
-## 15. Итог
+- run_id
+- supplier
+- row_number
+- reason_code
 
-Система:
+reason_code берётся из docs/etl/reason_codes.yaml.
 
-- не перезапускает дубликаты
-- не теряет SSOT
-- контролирует качество данных
-- управляет диском
-- не допускает двойной истины
+
+9.4 stats.json
+
+Минимальный контракт:
+
+{
+  "total_rows": 1000,
+  "good_rows": 950,
+  "bad_rows": 50,
+  "bad_ratio": 0.05
+}
+
+Допустим breakdown по category и reason.
+
+
+10. Manifest
+
+Обязательные поля:
+
+- run_id
+- supplier
+- input_filename
+- input_sha256
+- started_at
+- finished_at
+- good_rows
+- bad_rows
+- status (PASS|FAIL)
+- code_commit
+
+manifest хранится как операционный след.
+
+
+11. accepted_runs
+
+Путь:
+
+accepted_runs/<supplier>/<sha_prefix2>/<sha256>.json
+
+где sha_prefix2 — первые 2 hex-символа SHA256.
+
+Создаётся только при PASS.
+
+Минимальный контракт:
+
+{
+  "run_id": "...",
+  "accepted_at": "ISO8601",
+  "input_filename": "...",
+  "manifest_path": "..."
+}
+
+Retention: 180–365 дней.
+
+
+12. State
+
+Immutable слой:
+
+state_store/<supplier>/<run_id>/facts.ndjson
+
+Содержимое state_store никогда не изменяется после публикации.
+Любые изменения (в том числе ручные) запрещены.
+
+
+12.1 Публикация state
+
+POSIX → переключение symlink
+Object storage → атомарный pointer-object
+
+
+12.2 State Retention Safety
+
+state_store/<supplier>/<run_id> хранится минимум state_retention_hours
+после переключения current
+(default 12 часов, configurable).
+
+
+13. Retention
+
+Удаляются:
+
+- quarantine/*
+- archive/*
+- obsolete/*
+- старые runs/*
+- diag/ (3–7 дней)
+
+Не удаляются:
+
+- активный state
+- accepted_runs до истечения retention
+
+
+14. Мониторинг
+
+Рекомендуется:
+
+- monitor age(state/current/<supplier>)
+- alert при N подряд одинаковых SHA (drift detection)
+- monitor repeated FAIL
+
+Force-publish запрещён.
+
+
+15. Idempotency
+
+Повторная обработка того же файла невозможна благодаря accepted_runs.
+
+Если run прерван:
+
+- state не переключается
+- возможен новый run
+
+
+16. Границы ответственности
+
+Extractor → чтение
+Emitter → GOOD/BAD
+Gate → технический + schema check
+DQ → контроль качества
+Ingestion → orchestrator
+
+
+17. Запрещено
+
+- дельта-файлы
+- запуск без DQ-конфига
+- параллельные run одного supplier
+- прямое чтение state_store
+- перезапись immutable state
+- свободный текст вместо reason_code
