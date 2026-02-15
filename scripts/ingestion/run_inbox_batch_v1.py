@@ -9,8 +9,14 @@ from typing import Dict, List, Optional, Tuple, Any
 
 def _norm_supplier_name(s: str) -> str:
     return (s or '').strip().lower()
-def now_run_id() -> str:
-    return time.strftime("%Y%m%d_%H%M%S", time.localtime())
+import secrets
+from datetime import datetime, timezone
+
+def now_run_id(supplier: str) -> str:
+    supplier = (supplier or "").strip().lower()
+    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    rand6 = secrets.token_hex(3)
+    return f"{supplier}_{ts}_{rand6}"
 
 def ensure_dir(p: Path) -> None:
     p.mkdir(parents=True, exist_ok=True)
@@ -217,9 +223,6 @@ def main() -> int:
 
     inbox_root = Path(args.root)
     out_root = Path(args.out)
-    run_id = args.run_id.strip() or now_run_id()
-    out_dir = out_root / run_id
-    ensure_dir(out_dir)
 
     files: List[Path] = []
     if inbox_root.exists():
@@ -229,16 +232,19 @@ def main() -> int:
     files.sort(key=lambda x: str(x))
 
     report: Dict[str, Any] = {
-        "run_id": run_id,
+        "run_id": "MULTI_SUPPLIER",
         "inbox_root": safe_relpath(inbox_root),
-        "out_dir": str(out_dir),
+        "out_root": str(out_root),
         "items_total": len(files),
         "items": [],
         "unsupported": [],
     }
     for f in files:
         supplier_raw = detect_supplier(f, inbox_root)
-        supplier = (str(supplier_raw) if supplier_raw is not None else "").strip().lower()
+        supplier = _norm_supplier_name(supplier_raw)
+        run_id = args.run_id.strip() or now_run_id(supplier)
+        out_dir = out_root / run_id
+        ensure_dir(out_dir)
         if only_supplier and supplier != only_supplier:
             continue
 
