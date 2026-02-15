@@ -28,6 +28,14 @@ def sha256_bytes(b: bytes) -> str:
 def sha256_file(path: Path) -> str:
   return sha256_bytes(path.read_bytes())
 
+
+def accepted_marker_path(ssot_root: Path, supplier_id: str, input_sha256: str) -> Path:
+  supplier = (supplier_id or "").strip().lower()
+  sha = (input_sha256 or "").strip().lower()
+  if len(sha) < 2:
+    die(f"INPUT_SHA256_INVALID: {sha}", EXIT_FAIL)
+  return ssot_root / "accepted_runs" / supplier / sha[:2] / f"{sha}.json"
+
 def sha256_lf_normalized(path: Path) -> str:
   return sha256_bytes(path.read_bytes().replace(b"\r\n", b"\n"))
 
@@ -153,13 +161,15 @@ def main():
     if mh != expected["mapping_hash"]:
       die(f"MAPPING_HASH_MISMATCH_FILE: {mh} != {expected['mapping_hash']}", EXIT_FAIL)
 
-  # idempotency marker
-  accepted_dir = ssot_root / "accepted_runs"
-  marker_path = accepted_dir / f"{expected['run_id']}.json"
+  # idempotency marker (supplier + input sha256)
+  input_sha256 = sha256_file(source_path)
+  marker_path = accepted_marker_path(ssot_root, expected["supplier_id"], input_sha256)
   if marker_path.exists():
     out = {
       "status": "already_ingested",
       "run_id": expected["run_id"],
+      "supplier_id": expected["supplier_id"],
+      "input_sha256": input_sha256,
       "marker": str(marker_path),
     }
     sys.stderr.write(compact(out))
@@ -240,8 +250,8 @@ def main():
     atomic_write_text(manifest_path, compact(manifest))
 
     # marker (strictly after manifest)
-    ensure_dir(accepted_dir)
-    marker = {"status":"accepted","run_id": expected["run_id"],"ingested_at": ingested_at,"manifest_ref": str(manifest_path)}
+    ensure_dir(marker_path.parent)
+    marker = {"status":"accepted","run_id": expected["run_id"],"supplier_id": expected["supplier_id"],"input_sha256": input_sha256,"ingested_at": ingested_at,"manifest_ref": str(manifest_path)}
     atomic_write_text(marker_path, compact(marker))
 
     out = {
