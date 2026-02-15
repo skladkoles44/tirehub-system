@@ -166,7 +166,7 @@ def main():
     sys.exit(EXIT_OK)
 
   locks_dir = ssot_root / "locks"
-  lock_path = locks_dir / f"{expected['run_id']}.lock"
+  lock_path = locks_dir / f"{expected['supplier_id']}.lock"
   acquire_lock(lock_path)
 
   tmp_dir = ssot_root / "tmp"
