@@ -56,7 +56,8 @@ while IFS= read -r sheet; do
 
   "$PY" scripts/ingestion/brinex/emit_brinex_xlsx_sheet_v1.py "$XLSX" "$sheet" "$OUT"
   rc=$?
-  if [ "$rc" -ne 0 ]; then
+  if [ "$rc" -ne 0 ] && [ "$rc" -ne 10 ]; then
+  if [ "$rc" -ne 0 ] && [ "$rc" -ne 10 ]; then
     echo "FAIL emitter rc=$rc sheet=$sheet"
     fail_count=$((fail_count+1))
     echo
