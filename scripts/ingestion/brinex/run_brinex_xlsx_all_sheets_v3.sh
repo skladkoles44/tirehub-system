@@ -1,17 +1,23 @@
-#!/data/data/com.termux/files/usr/bin/bash
+#!/usr/bin/env bash
 set -u
 set -o pipefail
 
-XLSX="/storage/emulated/0/Download/ETL/прайсотБринэксКозловской (1).xlsx"
-SSOT="/storage/emulated/0/Download/ETL/etl_data/raw_v1/ssot"
-ROOT="/storage/emulated/0/Download/ETL/etl_ops/tmp/brinex_xlsx_all_sheets_v3"
+PY="${PYTHON_BIN:-$(command -v python3)}"
+
+XLSX="${BRINEX_XLSX_PATH:-/storage/emulated/0/Download/ETL/прайсотБринэксКозловской (1).xlsx}"
+SSOT="${SSOT_ROOT:-/storage/emulated/0/Download/ETL/etl_data/raw_v1/ssot}"
+ROOT="${BRINEX_RUN_ROOT:-$TMP_ROOT/brinex_xlsx_all_sheets_v3}"
 
 mkdir -p "$ROOT"
 
-SHEETS=$(python3 - << 'PY'
+SHEETS=$("$PY" - << 'PY'
 from openpyxl import load_workbook
 from pathlib import Path
-xlsx = Path("/storage/emulated/0/Download/ETL/прайсотБринэксКозловской (1).xlsx")
+xlsx = Path(os.environ.get("BRINEX_XLSX_PATH", ""))
+if not str(xlsx):
+    raise SystemExit("BRINEX_XLSX_PATH not set")
+if not xlsx.exists():
+    raise SystemExit(f"XLSX NOT FOUND: {xlsx}")
 NEEDED_HEADERS = {"Код товара (goods_id)","Номенклатура","Код товара (product_id)","Артикул","Склад","Цена","Остаток на складе"}
 def norm(x): return "" if x is None else str(x).strip()
 wb = load_workbook(xlsx, data_only=True, read_only=True)
@@ -47,7 +53,7 @@ while IFS= read -r sheet; do
   mkdir -p "$OUT"
   echo "=== RUN sheet: $sheet -> $OUT ==="
 
-  python3 scripts/ingestion/brinex/emit_brinex_xlsx_sheet_v1.py "$XLSX" "$sheet" "$OUT"
+  "$PY" scripts/ingestion/brinex/emit_brinex_xlsx_sheet_v1.py "$XLSX" "$sheet" "$OUT"
   rc=$?
   if [ "$rc" -ne 0 ]; then
     echo "FAIL emitter rc=$rc sheet=$sheet"
@@ -56,7 +62,7 @@ while IFS= read -r sheet; do
     continue
   fi
 
-  python3 - << PY
+  "$PY" - << PY
 import json
 from pathlib import Path
 stats_p = Path("$OUT/stats.json")
@@ -77,7 +83,7 @@ base_p.write_text(json.dumps(baseline, ensure_ascii=False, indent=2) + "\n", enc
 print("OK: baseline run_id=", s.get("run_id"), "parser_id=", s.get("parser_id"), "good=", s.get("good_rows"), "bad=", s.get("bad_rows"))
 PY
 
-  python3 scripts/ingestion/kolobox/tirehub_gate_v1.py \
+  "$PY" scripts/ingestion/kolobox/tirehub_gate_v1.py \
     --stats "$OUT/stats.json" \
     --out "$OUT/verdict.json" \
     --baseline "$OUT/baseline.json"
@@ -89,7 +95,7 @@ PY
     continue
   fi
 
-  python3 scripts/ingestion/tirehub_ingest_v1.py \
+  "$PY" scripts/ingestion/tirehub_ingest_v1.py \
     --ssot-root "$SSOT" \
     --good "$OUT/good.ndjson" \
     --stats "$OUT/stats.json" \
