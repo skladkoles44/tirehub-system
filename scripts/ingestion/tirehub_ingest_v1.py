@@ -1,8 +1,58 @@
+import re
 #!/usr/bin/env python3
 import argparse, json, sys, os, hashlib
 from pathlib import Path
 from datetime import datetime, timezone
 
+
+# --- DQ (per-supplier) ---------------------------------------------------------
+# Canon: mandatory etl_ops/config/<supplier>.yaml with:
+#   min_fact_count, max_bad_ratio, allow_empty_snapshot
+# No external deps: parse a tiny subset of YAML (key: value).
+def _parse_simple_yaml_kv(text: str) -> dict:
+  out = {}
+  for raw in (text or "").splitlines():
+    line = raw.strip()
+    if not line or line.startswith("#"): 
+      continue
+    m = re.match(r'^([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(.+)\s*$', line)
+    if not m:
+      continue
+    k, v = m.group(1), m.group(2)
+    # strip quotes
+    if (v.startswith('"') and v.endswith('"')) or (v.startswith("'") and v.endswith("'")):
+      v = v[1:-1]
+    # bool
+    if v.lower() in ("true","false"):
+      out[k] = (v.lower() == "true")
+      continue
+    # number (int/float)
+    try:
+      if "." in v:
+        out[k] = float(v)
+      else:
+        out[k] = int(v)
+      continue
+    except Exception:
+      out[k] = v
+  return out
+
+def dq_config_path(ssot_root: Path, supplier_id: str) -> Path:
+  # prod: /home/etl/apps/tirehub/ssot -> /home/etl/apps/tirehub/etl_ops/config/<supplier>.yaml
+  base = (ssot_root.parent / "etl_ops" / "config")
+  return base / f"{supplier_id}.yaml"
+
+def load_dq_config(ssot_root: Path, supplier_id: str) -> dict:
+  cfg_path = dq_config_path(ssot_root, supplier_id)
+  if not cfg_path.exists():
+    die(f"CONFIG_DQ_MISSING: {cfg_path}", EXIT_FAIL)
+  cfg = _parse_simple_yaml_kv(cfg_path.read_text(encoding="utf-8"))
+  # required keys
+  for k in ("min_fact_count","max_bad_ratio","allow_empty_snapshot"):
+    if k not in cfg:
+      die(f"CONFIG_DQ_INVALID: missing {k} in {cfg_path}", EXIT_FAIL)
+  return cfg
+# ------------------------------------------------------------------------------
 EXIT_OK = 0
 EXIT_ARGS = 1
 EXIT_FAIL = 20
@@ -160,6 +210,28 @@ def main():
     mh = sha256_lf_normalized(mapping_path)
     if mh != expected["mapping_hash"]:
       die(f"MAPPING_HASH_MISMATCH_FILE: {mh} != {expected['mapping_hash']}", EXIT_FAIL)
+
+  
+  # DQ_ENFORCEMENT_BEGIN
+  dq = load_dq_config(ssot_root, expected["supplier_id"])
+  good_rows = int(stats.get("good_rows", 0))
+  bad_rows = int(stats.get("bad_rows", 0))
+  total = good_rows + bad_rows
+  bad_ratio = (bad_rows / total) if total > 0 else 0.0
+
+  allow_empty = bool(dq["allow_empty_snapshot"])
+  min_fact = int(dq["min_fact_count"])
+  max_bad = float(dq["max_bad_ratio"])
+
+  if (not allow_empty) and good_rows == 0:
+    die(f"DQ_EMPTY_SNAPSHOT: supplier={expected['supplier_id']}", EXIT_FAIL)
+
+  if good_rows < min_fact:
+    die(f"DQ_MIN_FACT_COUNT_FAIL: good_rows={good_rows} < min_fact_count={min_fact}", EXIT_FAIL)
+
+  if total > 0 and bad_ratio > max_bad:
+    die(f"DQ_MAX_BAD_RATIO_FAIL: bad_ratio={bad_ratio:.6f} > max_bad_ratio={max_bad}", EXIT_FAIL)
+  # DQ_ENFORCEMENT_END
 
   # idempotency marker (supplier + input sha256)
   input_sha256 = sha256_file(source_path)
