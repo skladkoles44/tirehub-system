@@ -13,6 +13,7 @@ mkdir -p "$ROOT"
 SHEETS=$("$PY" - << 'PY'
 from openpyxl import load_workbook
 from pathlib import Path
+import os
 xlsx = Path(os.environ.get("BRINEX_XLSX_PATH", ""))
 if not str(xlsx):
     raise SystemExit("BRINEX_XLSX_PATH not set")
