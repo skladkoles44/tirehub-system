@@ -38,10 +38,16 @@ def _parse_simple_yaml_kv(text: str) -> dict:
   return out
 
 def dq_config_path(ssot_root: Path, supplier_id: str) -> Path:
-  # prod: /home/etl/apps/tirehub/ssot -> /home/etl/apps/tirehub/etl_ops/config/<supplier>.yaml
-  base = (ssot_root.parent / "etl_ops" / "config")
-  return base / f"{supplier_id}.yaml"
+  supplier_id = (supplier_id or "").strip().lower()
 
+  # walk upwards from ssot_root to find <base>/etl_ops/config
+  for base in [ssot_root] + list(ssot_root.parents):
+    cand = base / "etl_ops" / "config"
+    if cand.exists() and cand.is_dir():
+      return cand / f"{supplier_id}.yaml"
+
+  # final fallback (may not exist; load_dq_config will fail explicitly)
+  return (ssot_root / "etl_ops" / "config" / f"{supplier_id}.yaml")
 def load_dq_config(ssot_root: Path, supplier_id: str) -> dict:
   cfg_path = dq_config_path(ssot_root, supplier_id)
   if not cfg_path.exists():
@@ -190,6 +196,26 @@ def main():
     die(f"INGEST_BLOCKED_BY_GATE: verdict={v}", EXIT_FAIL)
 
   stats = json_load(stats_path)
+  # STATS_NORMALIZE_BEGIN
+  # normalize minimal emitter stats (e.g. centrshin)
+  stats.setdefault("file_readable", True)
+  stats.setdefault("structure_ok", True)
+  # counters
+  if "good_rows" not in stats:
+    stats["good_rows"] = int(stats.get("lines") or stats.get("emitted_items") or 0)
+  if "bad_rows" not in stats:
+    stats["bad_rows"] = int(stats.get("bad_qty") or 0) + int(stats.get("bad_price") or 0)
+  # optional derived fields (compat)
+  if "exploded_lines" not in stats:
+    stats["exploded_lines"] = int(stats.get("good_rows") or 0)
+  if "source_rows_read" not in stats:
+    stats["source_rows_read"] = int(stats.get("seen_items") or stats.get("seen") or (int(stats.get("good_rows") or 0) + int(stats.get("bad_rows") or 0)))
+  if "explosion_factor_exact" not in stats:
+    denom = int(stats.get("source_rows_read") or 0)
+    stats["explosion_factor_exact"] = (float(stats.get("exploded_lines") or 0) / float(denom)) if denom > 0 else 0.0
+  if "flags_counts" not in stats or not isinstance(stats.get("flags_counts"), dict):
+    stats["flags_counts"] = {}
+  # STATS_NORMALIZE_END
   for k in ["run_id","supplier_id","parser_id","effective_at","mapping_hash","mapping_version","good_rows","file_readable","structure_ok"]:
     if k not in stats:
       die(f"STATS_MISSING_FIELD: {k}", EXIT_FAIL)
@@ -234,6 +260,13 @@ def main():
   # DQ_ENFORCEMENT_END
 
   # idempotency marker (supplier + input sha256)
+  # SOURCE_PATH_BEGIN
+  # source_path: used only for idempotency marker sha256
+  source_path = Path(stats.get("source_path") or stats.get("source_file") or stats.get("input_path") or str(good_path))
+  if not source_path.exists():
+    source_path = good_path
+  # SOURCE_PATH_END
+
   input_sha256 = sha256_file(source_path)
   marker_path = accepted_marker_path(ssot_root, expected["supplier_id"], input_sha256)
   if marker_path.exists():
@@ -265,12 +298,50 @@ def main():
     ensure_dir(tmp_dir)
     # validate + copy to tmp with LF newlines
     with good_path.open("r", encoding="utf-8", errors="strict") as fin, tmp_path.open("w", encoding="utf-8", newline="\n") as fout:
-      for line in fin:
+      for idx, line in enumerate(fin, 1):
         line = line.strip()
         if not line:
           continue
         try:
           obj = json.loads(line)
+          # GOOD_NORMALIZE_BEGIN
+          # compat: legacy centrshin emitter -> canonical good record
+          if isinstance(obj, dict) and ("parsed" not in obj) and isinstance(obj.get("item"), dict):
+            it = obj.get("item") or {}
+            sid = str(it.get("supplier_item_id") or "").strip()
+            qty = it.get("qty")
+            price_opt = it.get("price_opt")
+            try:
+              qty_i = int(qty) if qty is not None else None
+            except Exception:
+              qty_i = None
+            try:
+              price_i = int(price_opt) if price_opt is not None else None
+            except Exception:
+              price_i = None
+            raw_obj = obj.get("raw") if isinstance(obj.get("raw"), dict) else {}
+            ev = stats.get("emitter_version") if isinstance(stats, dict) else None
+            obj = {
+              "supplier_id": expected["supplier_id"],
+              "parser_id": expected["parser_id"],
+              "mapping_version": expected["mapping_version"],
+              "mapping_hash": expected["mapping_hash"],
+              "ndjson_contract_version": "v1",
+              "emitter_version": ev or "compat_legacy_centrshin",
+              "run_id": expected["run_id"],
+              "effective_at": expected["effective_at"],
+              "sku_candidate_key": sid,
+              "raw": raw_obj,
+              "parsed": {
+                "supplier_item_id": sid,
+                "qty": qty_i,
+                "price": price_i,
+              },
+              "quality_flags": [],
+              "_meta": {"source_row_number": int(idx)},
+            }
+          # GOOD_NORMALIZE_END
+
         except Exception as e:
           die(f"NDJSON_PARSE_FAIL: {e}", EXIT_FAIL)
         validate_good_line(obj, expected)

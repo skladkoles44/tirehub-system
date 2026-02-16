@@ -1,0 +1,3 @@
+min_fact_count: 1
+max_bad_ratio: 0.10
+allow_empty_snapshot: false
