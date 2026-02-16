@@ -63,6 +63,7 @@ while IFS= read -r sheet; do
   fi
 
   "$PY" - << PY
+import os
 import json
 from pathlib import Path
 stats_p = Path("$OUT/stats.json")
