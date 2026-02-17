@@ -14,6 +14,11 @@ if ! command -v psql >/dev/null 2>&1; then
   exit 2
 fi
 
+if ! command -v createdb >/dev/null 2>&1; then
+  echo "ERROR: createdb not found" >&2
+  exit 2
+fi
+
 if command -v pg_isready >/dev/null 2>&1; then
   pg_isready -q || { echo "ERROR: postgres not ready" >&2; exit 2; }
 fi
