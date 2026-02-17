@@ -20,7 +20,14 @@ psql "$DB_URL" -f "$SQL_FILE" -v ON_ERROR_STOP=1
 
 echo ""
 echo "Verification:"
-psql "$DB_URL" -c "\dt master_products supplier_sku_map supplier_offers_latest schema_migrations" -v ON_ERROR_STOP=1
+psql -v ON_ERROR_STOP=1 "$DB_URL" -c "\
+SELECT schemaname, tablename, tableowner\
+FROM pg_tables\
+WHERE schemaname = 'public'\
+  AND tablename IN ('master_products','supplier_sku_map','supplier_offers_latest','schema_migrations')\
+ORDER BY tablename;\
+"\
+ -v ON_ERROR_STOP=1
 
 echo ""
 echo "OK: schema v1 applied"
