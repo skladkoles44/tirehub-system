@@ -528,11 +528,13 @@ def main() -> int:
                 if not re.match(r"^\d+(ms|s|min|h)$", timeout_val):
                     raise ValueError(f"invalid --lock-timeout value '{timeout_val}'")
                 conn.execute(text(f"SET lock_timeout = '{timeout_val}'"))
+                conn.commit()  # end autobegin txn after SET lock_timeout
             except Exception as e:
                 logger.error("ERROR: invalid --lock-timeout value %r: %s", args.lock_timeout, e)
                 return 2
 
             conn.execute(LOCK_SQL, {"k": supplier_id})
+            conn.commit()  # end autobegin txn after advisory lock
 
         with open(in_path, "r", encoding="utf-8") as f:
             for ln, line in enumerate(f, start=1):
