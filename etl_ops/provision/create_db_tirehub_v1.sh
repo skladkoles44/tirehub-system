@@ -25,13 +25,16 @@ print("".join(secrets.choice(alphabet) for _ in range(32)))
 PY
 )"
 
-# choose runner
+# choose runner (must execute as postgres)
 if command -v sudo >/dev/null 2>&1; then
   PSQL="sudo -u postgres psql -v ON_ERROR_STOP=1"
+  CREATEDB="sudo -u postgres createdb"
 else
   PSQL="psql -U postgres -v ON_ERROR_STOP=1"
+  CREATEDB="createdb -U postgres"
 fi
 
+# 1) create/rotate role (allowed in DO)
 eval "$PSQL" <<SQL
 DO \$\$
 BEGIN
@@ -42,17 +45,16 @@ BEGIN
   END IF;
 END
 \$\$;
-
-DO \$\$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = '${DB_NAME}') THEN
-    CREATE DATABASE ${DB_NAME} OWNER ${DB_USER};
-  END IF;
-END
-\$\$;
-
-GRANT ALL PRIVILEGES ON DATABASE ${DB_NAME} TO ${DB_USER};
 SQL
+
+# 2) create DB (cannot be inside DO). Idempotent check + createdb.
+DB_EXISTS="$(eval "$PSQL" -tAc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'" || true)"
+if [ "${DB_EXISTS}" != "1" ]; then
+  eval "$CREATEDB" -O "${DB_USER}" "${DB_NAME}"
+fi
+
+# 3) privileges
+eval "$PSQL" -v ON_ERROR_STOP=1 -c "GRANT ALL PRIVILEGES ON DATABASE ${DB_NAME} TO ${DB_USER};"
 
 echo "OK: role=user=${DB_USER}"
 echo "OK: database=${DB_NAME}"
