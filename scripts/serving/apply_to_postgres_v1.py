@@ -524,10 +524,10 @@ def main() -> int:
 
             try:
                 timeout_val = str(args.lock_timeout)
-# PostgreSQL does not accept bind params in SET; use literal after strict validation
-if not re.match(r"^\\d+(ms|s|min|h)$", timeout_val):
-    raise ValueError(f"invalid --lock-timeout value '{timeout_val}'")
-conn.execute(text(f"SET lock_timeout = '{timeout_val}'"))
+                # PostgreSQL does not accept bind params in SET; use literal after strict validation
+                if not re.match(r"^\d+(ms|s|min|h)$", timeout_val):
+                    raise ValueError(f"invalid --lock-timeout value '{timeout_val}'")
+                conn.execute(text(f"SET lock_timeout = '{timeout_val}'"))
             except Exception as e:
                 logger.error("ERROR: invalid --lock-timeout value %r: %s", args.lock_timeout, e)
                 return 2
