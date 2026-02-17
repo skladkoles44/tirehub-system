@@ -254,7 +254,7 @@ def is_transient_db_error(exc: BaseException) -> bool:
     return False
 
 
-LOCK_TIMEOUT_SQL = text("SET lock_timeout = :v")
+LOCK_TIMEOUT_SQL = None  # patched: SET lock_timeout cannot use bind params
 LOCK_SQL = text("SELECT pg_advisory_lock(hashtext(:k))")
 UNLOCK_SQL = text("SELECT pg_advisory_unlock(hashtext(:k))")
 
@@ -523,7 +523,11 @@ def main() -> int:
             conn = engine.connect()
 
             try:
-                conn.execute(LOCK_TIMEOUT_SQL, {"v": str(args.lock_timeout)})
+                timeout_val = str(args.lock_timeout)
+# PostgreSQL does not accept bind params in SET; use literal after strict validation
+if not re.match(r"^\\d+(ms|s|min|h)$", timeout_val):
+    raise ValueError(f"invalid --lock-timeout value '{timeout_val}'")
+conn.execute(text(f"SET lock_timeout = '{timeout_val}'"))
             except Exception as e:
                 logger.error("ERROR: invalid --lock-timeout value %r: %s", args.lock_timeout, e)
                 return 2
