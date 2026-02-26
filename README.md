@@ -28,3 +28,24 @@ PHONE / TEST / PROD — одинаковая структура, отличае�
 - docs/etl/archive/
 - docs/etl/archive/ETL_CANON_V1.md
 - docs/etl/archive/ETL_CANON_V1_QA.md
+
+---
+
+## MAX Bots Reliability Notes (production)
+
+This project’s MAX Bot1/Bot2 runtime uses a shared SQLite database.
+
+Key invariants (enforced per-connection in both bots):
+
+- journal_mode = WAL
+- synchronous = NORMAL
+- busy_timeout = 5000 ms
+- foreign_keys = ON
+
+Operational verification highlights:
+
+- Broken claim rows were detected earlier and have been fixed (claim_id present while claim_ts missing).
+- Dead rows observed were legitimate terminal outcomes (synthetic cleaned rows and a 404 error case after max attempts).
+
+Delivery semantics: at-least-once with bounded retries and dead-lettering.
+
