@@ -1,0 +1,14 @@
+kolobox:
+  routes:
+    - pattern: "Прайс_Колобокс_Шины_Грузовые"
+      supplier: "kolobox_truck"
+      inbox_dir: "Kolobox"
+    - pattern: "Прайс_Колобокс_Диски"
+      supplier: "kolobox_diski"
+      inbox_dir: "Kolobox"
+    - pattern: "Прайс_Колобокс_Комплектации"
+      supplier: "kolobox_komplektatsii"
+      inbox_dir: "Kolobox"
+    - pattern: "Прайс_Колобокс_Шины"
+      supplier: "kolobox_shiny"
+      inbox_dir: "Kolobox"
