@@ -4,7 +4,7 @@ set -euo pipefail
 # run_kolobox_full_v1.sh — оркестратор Kolobox v1
 # emitter → gate → ingest → curated
 
-PY="${PY:-/home/etl/apps/tirehub/.venv/bin/python}"
+PY="${PY:-${ETL_VENV_ROOT:?ETL_VENV_ROOT not set}/bin/python}"
 
 SUPPLIER="kolobox"
 IN_FILE="${IN_FILE:-inputs/inbox/Kolobox/Прайс_Колобокс_Шины_2026-02-03 (XLS).xls}"
