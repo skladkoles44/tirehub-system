@@ -177,7 +177,7 @@ def main():
   ap.add_argument("--stats", required=True, help="path to out/<run_id>/stats.json")
   ap.add_argument("--verdict", required=True, help="path to out/<run_id>/verdict.json (gate)")
   ap.add_argument("--mapping", required=False, help="path to mapping.yaml (optional but recommended)")
-  ap.add_argument("--ssot-root", required=False, default="/home/etl/apps/tirehub/ssot", help="SSOT root dir")
+  ap.add_argument("--ssot-root", required=False, default=os.environ.get("SSOT_ROOT"), help="SSOT root dir")
   args = ap.parse_args()
 
   good_path = Path(args.good)
