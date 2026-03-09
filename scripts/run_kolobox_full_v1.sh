@@ -63,7 +63,7 @@ echo "=== 3) Ingestion (SSOT) ==="
   --verdict "$VERDICT_JSON" \
   --mapping "$MAPPING"
 
-MANIFEST_JSON="ssot/manifests/${RUN_ID}.json"
+MANIFEST_JSON="${SSOT_ROOT:?SSOT_ROOT not set}/manifests/${RUN_ID}.json"
 test -f "$MANIFEST_JSON" || {
   echo "NOT_FOUND: $MANIFEST_JSON"
   echo "== manifests tail =="
@@ -74,7 +74,7 @@ test -f "$MANIFEST_JSON" || {
 echo "=== 4) Curated ==="
 "$PY" scripts/curated/tirehub_curate_v1.py \
   --manifest "$MANIFEST_JSON" \
-  --out-dir "curated_v1/out/${RUN_ID}"
+  --out-dir "${CURATED_ROOT:?CURATED_ROOT not set}"
 
 echo "=== DONE ==="
 echo "OUT_DIR:     $OUT_DIR"
