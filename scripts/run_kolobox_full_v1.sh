@@ -7,12 +7,12 @@ set -euo pipefail
 PY="${PY:-${ETL_VENV_ROOT:?ETL_VENV_ROOT not set}/bin/python}"
 
 SUPPLIER="kolobox"
-IN_FILE="${IN_FILE:-inputs/inbox/Kolobox/Прайс_Колобокс_Шины_2026-02-03 (XLS).xls}"
+IN_FILE="${IN_FILE:-${ETL_VAR_ROOT:?ETL_VAR_ROOT not set}/inputs/inbox/Kolobox/Прайс_Колобокс_Шины_2026-02-03 (XLS).xls}"
 MAPPING="${MAPPING:-mappings/suppliers/kolobox.yaml}"
 EFFECTIVE_AT="${EFFECTIVE_AT:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
 RUN_ID="${RUN_ID:-kolobox_shiny_$(date -u +%Y%m%dT%H%M%SZ)_full}"
 
-OUT_ROOT="out/${SUPPLIER}/ndjson_v1final"
+OUT_ROOT="${ETL_VAR_ROOT:?ETL_VAR_ROOT not set}/out/${SUPPLIER}/ndjson_v1final"
 OUT_DIR="${OUT_ROOT}/${RUN_ID}"
 
 GOOD_NDJSON="${OUT_DIR}/good.ndjson"
