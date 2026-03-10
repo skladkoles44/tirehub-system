@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import imaplib, ssl, os, json, email, re, time, fnmatch
+import imaplib, ssl, os, json, email, re, time, fnmatch, atexit, signal
 import yaml
 from email.header import decode_header, make_header
 from pathlib import Path
@@ -14,6 +14,71 @@ def load_env_file(path: str) -> None:
             continue
         k, v = line.split("=", 1)
         os.environ.setdefault(k.strip(), v.strip())
+
+_OWNER_LOCK_RELEASE = None
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+def _release_owner_lock() -> None:
+    global _OWNER_LOCK_RELEASE
+    if _OWNER_LOCK_RELEASE is None:
+        return
+    try:
+        _OWNER_LOCK_RELEASE()
+    finally:
+        _OWNER_LOCK_RELEASE = None
+
+def _install_owner_signal_handlers() -> None:
+    def _handler(signum, frame):
+        _release_owner_lock()
+        raise SystemExit(128 + signum)
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(sig, _handler)
+
+def acquire_owner_lock(lock_path: Path):
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    while True:
+        try:
+            fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o664)
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(f"{os.getpid()}\n")
+            def _release():
+                try:
+                    txt = lock_path.read_text(encoding="utf-8").strip()
+                except FileNotFoundError:
+                    return
+                if txt == str(os.getpid()):
+                    try:
+                        lock_path.unlink()
+                    except FileNotFoundError:
+                        pass
+            return _release
+        except FileExistsError:
+            try:
+                txt = lock_path.read_text(encoding="utf-8").strip()
+            except FileNotFoundError:
+                continue
+            try:
+                other_pid = int(txt)
+            except ValueError:
+                other_pid = None
+            if other_pid and _pid_alive(other_pid):
+                raise SystemExit(f"MAIL_INGEST_OWNER_LOCKED pid={other_pid} path={lock_path}")
+            try:
+                lock_path.unlink()
+            except FileNotFoundError:
+                continue
+            except OSError as ex:
+                raise SystemExit(f"MAIL_INGEST_OWNER_STALE_UNLINK_FAIL path={lock_path} err={ex}")
+        except OSError as ex:
+            raise SystemExit(f"MAIL_INGEST_OWNER_CREATE_FAIL path={lock_path} err={ex}")
 
 def need(name: str) -> str:
     v = os.environ.get(name, "").strip()
@@ -111,10 +176,8 @@ def load_suppliers_registry(path: Path):
             raise SystemExit(f"SUPPLIERS_REGISTRY_SCHEMA_FAIL: suppliers[{idx}].inbox_dir empty path={path}")
         if not isinstance(patterns, list) or not patterns or not all(isinstance(x, str) and x.strip() for x in patterns):
             raise SystemExit(f"SUPPLIERS_REGISTRY_SCHEMA_FAIL: suppliers[{idx}].filename_patterns must be non-empty list[str] path={path}")
-        # reserved fields: validated now to keep registry contract strict; runtime routing does not enforce them yet
         if not isinstance(accepted_mailboxes, list) or not all(isinstance(x, str) for x in accepted_mailboxes):
             raise SystemExit(f"SUPPLIERS_REGISTRY_SCHEMA_FAIL: suppliers[{idx}].accepted_mailboxes must be list[str] path={path}")
-        # reserved fields: validated now to keep registry contract strict; runtime routing does not enforce them yet
         if not isinstance(senders, list) or not all(isinstance(x, str) for x in senders):
             raise SystemExit(f"SUPPLIERS_REGISTRY_SCHEMA_FAIL: suppliers[{idx}].senders must be list[str] path={path}")
         k1 = supplier.lower()
@@ -169,6 +232,13 @@ def main() -> int:
     mailbox = os.environ.get("IMAP_MAILBOX", "INBOX").strip() or "INBOX"
     max_msgs = int(os.environ.get("MAIL_INGEST_DRYRUN_MAX", "10"))
     state_path = Path(need("MAIL_INGEST_STATE"))
+    owner_lock_path = Path(os.environ.get("MAIL_INGEST_OWNER_LOCK", str(state_path.with_name("mail_ingest_owner.lock"))))
+    print(f"MAIL_INGEST_OWNER_LOCK={owner_lock_path}")
+    global _OWNER_LOCK_RELEASE
+    _OWNER_LOCK_RELEASE = acquire_owner_lock(owner_lock_path)
+    atexit.register(_release_owner_lock)
+    _install_owner_signal_handlers()
+    print(f"MAIL_INGEST_OWNER_PID={os.getpid()}")
     var_root = Path(need("ETL_VAR_ROOT"))
     registry_path = Path(os.environ.get("SUPPLIERS_REGISTRY_PATH", "config/suppliers_registry.yaml"))
     registry = load_suppliers_registry(registry_path)
