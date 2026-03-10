@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import imaplib, ssl, os, json, email, re, time, fnmatch
+import yaml
 from email.header import decode_header, make_header
 from pathlib import Path
 
@@ -80,53 +81,59 @@ def guess_supplier_from_filename(filename: str) -> str:
 
 def load_suppliers_registry(path: Path):
     if not path.exists():
-        return []
-    lines = path.read_text(encoding="utf-8").splitlines()
-    suppliers = []
-    cur = None
-    in_patterns = False
-
-    for raw in lines:
-        line = raw.rstrip()
-        if not line.strip() or line.lstrip().startswith("#"):
-            continue
-
-        if line.startswith("  - supplier: "):
-            if cur:
-                suppliers.append(cur)
-            cur = {
-                "supplier": line.split(":", 1)[1].strip().strip('"').strip("'"),
-                "inbox_dir": "",
-                "patterns": [],
-            }
-            in_patterns = False
-            continue
-
-        if cur is None:
-            continue
-
-        if line.startswith("    inbox_dir: "):
-            cur["inbox_dir"] = line.split(":", 1)[1].strip().strip('"').strip("'")
-            in_patterns = False
-            continue
-
-        if line.startswith("    filename_patterns:"):
-            in_patterns = True
-            continue
-
-        if in_patterns and line.startswith("      - "):
-            pat = line.split("-", 1)[1].strip().strip('"').strip("'")
-            cur["patterns"].append(pat)
-            continue
-
-        if line.startswith("    ") and not line.startswith("      - "):
-            in_patterns = False
-
-    if cur:
-        suppliers.append(cur)
-
-    return suppliers
-
+        raise SystemExit(f"SUPPLIERS_REGISTRY_NOT_FOUND: {path}")
+    try:
+        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except Exception as ex:
+        raise SystemExit(f"SUPPLIERS_REGISTRY_PARSE_FAIL: {path} :: {ex}")
+    if not isinstance(raw, dict):
+        raise SystemExit(f"SUPPLIERS_REGISTRY_SCHEMA_FAIL: root must be mapping path={path}")
+    suppliers = raw.get("suppliers")
+    if not isinstance(suppliers, list) or not suppliers:
+        raise SystemExit(f"SUPPLIERS_REGISTRY_SCHEMA_FAIL: suppliers must be non-empty list path={path}")
+    out = []
+    seen_supplier = set()
+    seen_slug = set()
+    for idx, item in enumerate(suppliers, 1):
+        if not isinstance(item, dict):
+            raise SystemExit(f"SUPPLIERS_REGISTRY_SCHEMA_FAIL: suppliers[{idx}] must be mapping path={path}")
+        supplier = str(item.get("supplier", "")).strip()
+        slug = str(item.get("slug", "")).strip()
+        inbox_dir = str(item.get("inbox_dir", "")).strip()
+        patterns = item.get("filename_patterns")
+        accepted_mailboxes = item.get("accepted_mailboxes", [])
+        senders = item.get("senders", [])
+        if not supplier:
+            raise SystemExit(f"SUPPLIERS_REGISTRY_SCHEMA_FAIL: suppliers[{idx}].supplier empty path={path}")
+        if not slug:
+            raise SystemExit(f"SUPPLIERS_REGISTRY_SCHEMA_FAIL: suppliers[{idx}].slug empty path={path}")
+        if not inbox_dir:
+            raise SystemExit(f"SUPPLIERS_REGISTRY_SCHEMA_FAIL: suppliers[{idx}].inbox_dir empty path={path}")
+        if not isinstance(patterns, list) or not patterns or not all(isinstance(x, str) and x.strip() for x in patterns):
+            raise SystemExit(f"SUPPLIERS_REGISTRY_SCHEMA_FAIL: suppliers[{idx}].filename_patterns must be non-empty list[str] path={path}")
+        # reserved fields: validated now to keep registry contract strict; runtime routing does not enforce them yet
+        if not isinstance(accepted_mailboxes, list) or not all(isinstance(x, str) for x in accepted_mailboxes):
+            raise SystemExit(f"SUPPLIERS_REGISTRY_SCHEMA_FAIL: suppliers[{idx}].accepted_mailboxes must be list[str] path={path}")
+        # reserved fields: validated now to keep registry contract strict; runtime routing does not enforce them yet
+        if not isinstance(senders, list) or not all(isinstance(x, str) for x in senders):
+            raise SystemExit(f"SUPPLIERS_REGISTRY_SCHEMA_FAIL: suppliers[{idx}].senders must be list[str] path={path}")
+        k1 = supplier.lower()
+        k2 = slug.lower()
+        if k1 in seen_supplier:
+            raise SystemExit(f"SUPPLIERS_REGISTRY_SCHEMA_FAIL: duplicate supplier={supplier} path={path}")
+        if k2 in seen_slug:
+            raise SystemExit(f"SUPPLIERS_REGISTRY_SCHEMA_FAIL: duplicate slug={slug} path={path}")
+        seen_supplier.add(k1)
+        seen_slug.add(k2)
+        out.append({
+            "supplier": supplier,
+            "slug": slug,
+            "inbox_dir": inbox_dir,
+            "patterns": [x.strip() for x in patterns if str(x).strip()],
+            "accepted_mailboxes": accepted_mailboxes,
+            "senders": senders,
+        })
+    return out
 def match_supplier_from_registry(filename: str, registry) -> str:
     n = filename or ""
     n_low = n.lower()
