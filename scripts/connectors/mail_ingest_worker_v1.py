@@ -131,7 +131,8 @@ def main() -> int:
         typ, data = m.uid("search", None, f"{last_uid + 1}:*")
         if typ != "OK":
             raise SystemExit("IMAP_UID_RANGE_SEARCH_FAIL")
-        new_uids = [x for x in (data[0].decode("utf-8").strip().split() if data and data[0] else []) if x]
+        found_uids = [x for x in (data[0].decode("utf-8").strip().split() if data and data[0] else []) if x]
+        new_uids = [u for u in found_uids if int(u) > last_uid]
         print(f"NEW_UID_COUNT={len(new_uids)}")
         if new_uids:
             print("NEW_UIDS=" + ",".join(new_uids[:20]))
