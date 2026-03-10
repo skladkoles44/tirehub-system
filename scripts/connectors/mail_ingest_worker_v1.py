@@ -130,20 +130,6 @@ def sanitize_filename(name: str) -> str:
         name = f"unnamed_{int(time.time())}.bin"
     return name
 
-def guess_supplier_from_filename(filename: str) -> str:
-    n = (filename or "").lower()
-    if "b2bbr" in n or "brinex" in n:
-        return "Brinex"
-    if "linaris" in n or "tiresopt" in n:
-        return "Linaris"
-    if "колобокс" in n or "kolobox" in n:
-        return "Kolobox"
-    if "centrshin" in n or "центршин" in n:
-        return "Centrshin"
-    if "shinservice" in n:
-        return "Shinservice"
-    return "Unknown"
-
 def load_suppliers_registry(path: Path):
     if not path.exists():
         raise SystemExit(f"SUPPLIERS_REGISTRY_NOT_FOUND: {path}")
@@ -352,8 +338,6 @@ def main() -> int:
                 safe_name = sanitize_filename(fname or "")
                 payload = part.get_payload(decode=True) or b""
                 supplier_dir = match_supplier_from_registry(safe_name, registry)
-                if supplier_dir == "Unknown":
-                    supplier_dir = guess_supplier_from_filename(safe_name)
                 target = var_root / "inputs" / "inbox" / supplier_dir / safe_name
 
                 print(f"ATTACHMENT_{att_count}_SAFE_NAME={safe_name}")
