@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import imaplib, ssl, os, sys, email
+import imaplib, ssl, os, json, email
 from email.header import decode_header, make_header
 from pathlib import Path
 
@@ -20,13 +20,39 @@ def need(name: str) -> str:
         raise SystemExit(f"ENV_MISSING: {name}")
     return v
 
-def hdr(v: str | None) -> str:
+def hdr(v):
     if not v:
         return ""
     try:
         return str(make_header(decode_header(v)))
     except Exception:
         return v
+
+def state_load(path: Path) -> dict:
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+def state_save(path: Path, obj: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(obj, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    tmp.replace(path)
+
+def parse_uid_fetch(data):
+    out = []
+    for part in data or []:
+        if isinstance(part, tuple) and len(part) >= 2:
+            meta, raw = part[0], part[1]
+            meta_s = meta.decode("utf-8", "ignore") if isinstance(meta, (bytes, bytearray)) else str(meta)
+            uid = ""
+            if "UID " in meta_s:
+                uid = meta_s.split("UID ", 1)[1].split()[0].rstrip(")")
+            out.append((uid, raw))
+    return out
 
 def main() -> int:
     env_file = os.environ.get("MAIL_INGEST_ENV_FILE", "").strip()
@@ -39,6 +65,9 @@ def main() -> int:
     password = need("IMAP_PASS")
     mailbox = os.environ.get("IMAP_MAILBOX", "INBOX").strip() or "INBOX"
     max_msgs = int(os.environ.get("MAIL_INGEST_DRYRUN_MAX", "10"))
+    state_path = Path(need("MAIL_INGEST_STATE"))
+    bootstrap = os.environ.get("MAIL_INGEST_BOOTSTRAP", "0").strip() == "1"
+    force_bootstrap = os.environ.get("MAIL_INGEST_FORCE_BOOTSTRAP", "0").strip() == "1"
 
     print("== dry-run config ==")
     print(f"IMAP_HOST={host}")
@@ -46,6 +75,9 @@ def main() -> int:
     print(f"IMAP_USER={user}")
     print(f"IMAP_MAILBOX={mailbox}")
     print(f"MAIL_INGEST_DRYRUN_MAX={max_msgs}")
+    print(f"MAIL_INGEST_STATE={state_path}")
+    print(f"MAIL_INGEST_BOOTSTRAP={'1' if bootstrap else '0'}")
+    print(f"MAIL_INGEST_FORCE_BOOTSTRAP={'1' if force_bootstrap else '0'}")
 
     ctx = ssl.create_default_context()
     with imaplib.IMAP4_SSL(host, port, ssl_context=ctx) as m:
@@ -59,42 +91,69 @@ def main() -> int:
             raise SystemExit(f"IMAP_SELECT_FAIL: {mailbox}")
         print("IMAP_SELECT_OK")
 
-        typ, data = m.search(None, "UNSEEN")
+        typ, data = m.response("UIDVALIDITY")
+        uidvalidity = ""
+        if typ == "UIDVALIDITY" and data and data[0]:
+            uidvalidity = data[0].decode("utf-8", "ignore") if isinstance(data[0], (bytes, bytearray)) else str(data[0])
+        print(f"UIDVALIDITY={uidvalidity}")
+
+        st = state_load(state_path)
+        print("== state before ==")
+        print(json.dumps(st, ensure_ascii=False))
+
+        typ, data = m.uid("search", None, "1:*")
         if typ != "OK":
-            raise SystemExit("IMAP_SEARCH_FAIL")
-        ids = [x for x in (data[0].decode("utf-8").strip().split() if data and data[0] else []) if x]
-        print(f"UNSEEN_COUNT={len(ids)}")
-        if ids:
-            print("UNSEEN_IDS=" + ",".join(ids[:20]))
+            raise SystemExit("IMAP_UID_SEARCH_FAIL")
+        all_uids = [x for x in (data[0].decode("utf-8").strip().split() if data and data[0] else []) if x]
+        print(f"UID_TOTAL={len(all_uids)}")
+        max_uid = all_uids[-1] if all_uids else ""
+        print(f"UID_MAX={max_uid}")
+
+        if bootstrap:
+            if st and not force_bootstrap:
+                raise SystemExit("BOOTSTRAP_REFUSED_STATE_EXISTS")
+            new_state = {"uidvalidity": uidvalidity, "last_uid": int(max_uid) if max_uid else 0}
+            state_save(state_path, new_state)
+            print("BOOTSTRAP_DONE=1")
+            print("== state after ==")
+            print(json.dumps(new_state, ensure_ascii=False))
+            return 0
+
+        if not st:
+            raise SystemExit("STATE_MISSING_RUN_BOOTSTRAP_FIRST")
+
+        if str(st.get("uidvalidity", "")) != str(uidvalidity):
+            raise SystemExit(f"UIDVALIDITY_CHANGED: state={st.get('uidvalidity','')} mailbox={uidvalidity}")
+
+        last_uid = int(st.get("last_uid", 0))
+        print(f"LAST_UID={last_uid}")
+
+        typ, data = m.uid("search", None, f"{last_uid + 1}:*")
+        if typ != "OK":
+            raise SystemExit("IMAP_UID_RANGE_SEARCH_FAIL")
+        new_uids = [x for x in (data[0].decode("utf-8").strip().split() if data and data[0] else []) if x]
+        print(f"NEW_UID_COUNT={len(new_uids)}")
+        if new_uids:
+            print("NEW_UIDS=" + ",".join(new_uids[:20]))
         else:
-            print("UNSEEN_IDS=")
+            print("NEW_UIDS=")
 
-        probe = ids[:max_msgs]
+        probe = new_uids[:max_msgs]
         print(f"PROBE_COUNT={len(probe)}")
+        if not probe:
+            return 0
 
-        for mid in probe:
-            print(f"--- MESSAGE {mid} BEGIN ---")
-            typ, msg_data = m.fetch(mid, "(BODY.PEEK[])")
-            if typ != "OK" or not msg_data:
-                print("FETCH_FAIL")
-                print(f"--- MESSAGE {mid} END ---")
-                continue
+        typ, msg_data = m.uid("fetch", ",".join(probe), "(UID BODY.PEEK[])")
+        if typ != "OK":
+            raise SystemExit("IMAP_UID_FETCH_FAIL")
 
-            raw = None
-            for part in msg_data:
-                if isinstance(part, tuple) and len(part) >= 2:
-                    raw = part[1]
-                    break
-            if raw is None:
-                print("NO_RAW_MESSAGE")
-                print(f"--- MESSAGE {mid} END ---")
-                continue
-
+        rows = parse_uid_fetch(msg_data)
+        for uid, raw in rows[:max_msgs]:
+            print(f"--- MESSAGE UID {uid} BEGIN ---")
             msg = email.message_from_bytes(raw)
             print("FROM=" + hdr(msg.get("From")))
             print("SUBJECT=" + hdr(msg.get("Subject")))
             print("DATE=" + hdr(msg.get("Date")))
-
             att_count = 0
             for part in msg.walk():
                 if part.is_multipart():
@@ -108,7 +167,7 @@ def main() -> int:
                     payload = part.get_payload(decode=True)
                     print(f"ATTACHMENT_{att_count}_SIZE={len(payload) if payload else 0}")
             print(f"ATTACHMENT_COUNT={att_count}")
-            print(f"--- MESSAGE {mid} END ---")
+            print(f"--- MESSAGE UID {uid} END ---")
     return 0
 
 if __name__ == "__main__":
