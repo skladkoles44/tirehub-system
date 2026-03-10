@@ -1,0 +1,47 @@
+mailboxes:
+  primary:
+    address: "etl@skladkoles44.ru"
+    enabled: true
+  secondary:
+    address: ""
+    enabled: false
+
+suppliers:
+  - supplier: "Brinex"
+    slug: "brinex"
+    inbox_dir: "Brinex"
+    accepted_mailboxes: ["primary", "secondary"]
+    senders: []
+    filename_patterns:
+      - "b2bbr.xlsx"
+      - "*brinex*"
+    notes: "Brinex price files from mailbox xray"
+
+  - supplier: "Linaris"
+    slug: "linaris"
+    inbox_dir: "Linaris"
+    accepted_mailboxes: ["primary", "secondary"]
+    senders: []
+    filename_patterns:
+      - "tiresopt.linaris.ru.price.xls"
+      - "*linaris*"
+      - "*tiresopt*"
+    notes: "Linaris price files from mailbox xray"
+
+  - supplier: "Kolobox"
+    slug: "kolobox"
+    inbox_dir: "Kolobox"
+    accepted_mailboxes: ["primary", "secondary"]
+    senders: []
+    filename_patterns:
+      - "Прайс_Колобокс_Шины_*"
+      - "Прайс_Колобокс_Шины_Грузовые_*"
+      - "Прайс_Колобокс_Диски_*"
+      - "Прайс_Колобокс_Комплектации_*"
+      - "*kolobox*"
+    notes: "Kolobox XLS feeds from mailbox xray"
+
+unknown_patterns:
+  - "6b1a7820-ff16-47c9-90f4-53b0d48b801c"
+  - "КП ДИСКИ.xls"
+  - "КП_шины..xlsx"
