@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import imaplib, ssl, os, json, email
+import imaplib, ssl, os, json, email, re, time
 from email.header import decode_header, make_header
 from pathlib import Path
 
@@ -54,6 +54,42 @@ def parse_uid_fetch(data):
             out.append((uid, raw))
     return out
 
+def sanitize_filename(name: str) -> str:
+    name = hdr(name or "")
+    name = re.sub(r'[<>:"/\\\\|?*]', "_", name)
+    name = re.sub(r"\s+", "_", name.strip())
+    name = re.sub(r"_+", "_", name)
+    name = name.strip("._")
+    if not name:
+        name = f"unnamed_{int(time.time())}.bin"
+    return name
+
+def guess_supplier_from_filename(filename: str) -> str:
+    n = (filename or "").lower()
+    if "b2bbr" in n or "brinex" in n:
+        return "Brinex"
+    if "linaris" in n or "tiresopt" in n:
+        return "Linaris"
+    if "колобокс" in n or "kolobox" in n:
+        return "Kolobox"
+    if "centrshin" in n or "центршин" in n:
+        return "Centrshin"
+    if "shinservice" in n:
+        return "Shinservice"
+    return "Unknown"
+
+def save_attachment_bytes(var_root: Path, supplier_dir: str, filename: str, payload: bytes) -> Path:
+    target_dir = var_root / "inputs" / "inbox" / supplier_dir
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target = target_dir / filename
+    tmp = target.with_name(target.name + ".tmp")
+    with open(tmp, "wb") as f:
+        f.write(payload)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, target)
+    return target
+
 def main() -> int:
     env_file = os.environ.get("MAIL_INGEST_ENV_FILE", "").strip()
     if env_file:
@@ -66,10 +102,12 @@ def main() -> int:
     mailbox = os.environ.get("IMAP_MAILBOX", "INBOX").strip() or "INBOX"
     max_msgs = int(os.environ.get("MAIL_INGEST_DRYRUN_MAX", "10"))
     state_path = Path(need("MAIL_INGEST_STATE"))
+    var_root = Path(need("ETL_VAR_ROOT"))
     bootstrap = os.environ.get("MAIL_INGEST_BOOTSTRAP", "0").strip() == "1"
     force_bootstrap = os.environ.get("MAIL_INGEST_FORCE_BOOTSTRAP", "0").strip() == "1"
+    download_mode = os.environ.get("MAIL_INGEST_DOWNLOAD", "0").strip() == "1"
 
-    print("== dry-run config ==")
+    print("== config ==")
     print(f"IMAP_HOST={host}")
     print(f"IMAP_PORT={port}")
     print(f"IMAP_USER={user}")
@@ -78,6 +116,8 @@ def main() -> int:
     print(f"MAIL_INGEST_STATE={state_path}")
     print(f"MAIL_INGEST_BOOTSTRAP={'1' if bootstrap else '0'}")
     print(f"MAIL_INGEST_FORCE_BOOTSTRAP={'1' if force_bootstrap else '0'}")
+    print(f"MAIL_INGEST_DOWNLOAD={'1' if download_mode else '0'}")
+    print(f"ETL_VAR_ROOT={var_root}")
 
     ctx = ssl.create_default_context()
     with imaplib.IMAP4_SSL(host, port, ssl_context=ctx) as m:
@@ -134,10 +174,7 @@ def main() -> int:
         found_uids = [x for x in (data[0].decode("utf-8").strip().split() if data and data[0] else []) if x]
         new_uids = [u for u in found_uids if int(u) > last_uid]
         print(f"NEW_UID_COUNT={len(new_uids)}")
-        if new_uids:
-            print("NEW_UIDS=" + ",".join(new_uids[:20]))
-        else:
-            print("NEW_UIDS=")
+        print("NEW_UIDS=" + ",".join(new_uids[:20]) if new_uids else "NEW_UIDS=")
 
         probe = new_uids[:max_msgs]
         print(f"PROBE_COUNT={len(probe)}")
@@ -150,24 +187,88 @@ def main() -> int:
 
         rows = parse_uid_fetch(msg_data)
         for uid, raw in rows[:max_msgs]:
+            uid_i = int(uid)
             print(f"--- MESSAGE UID {uid} BEGIN ---")
             msg = email.message_from_bytes(raw)
             print("FROM=" + hdr(msg.get("From")))
             print("SUBJECT=" + hdr(msg.get("Subject")))
             print("DATE=" + hdr(msg.get("Date")))
+
             att_count = 0
+            saved_any = False
+            relevant_any = False
+            hard_fail = False
+
             for part in msg.walk():
                 if part.is_multipart():
                     continue
                 cdisp = part.get_content_disposition()
                 fname = part.get_filename()
-                if cdisp == "attachment" or fname:
-                    att_count += 1
-                    print(f"ATTACHMENT_{att_count}_NAME=" + hdr(fname or ""))
-                    print(f"ATTACHMENT_{att_count}_TYPE=" + str(part.get_content_type() or ""))
-                    payload = part.get_payload(decode=True)
-                    print(f"ATTACHMENT_{att_count}_SIZE={len(payload) if payload else 0}")
+                if not (cdisp == "attachment" or fname):
+                    continue
+
+                att_count += 1
+                safe_name = sanitize_filename(fname or "")
+                payload = part.get_payload(decode=True) or b""
+                supplier_dir = guess_supplier_from_filename(safe_name)
+                target = var_root / "inputs" / "inbox" / supplier_dir / safe_name
+
+                print(f"ATTACHMENT_{att_count}_SAFE_NAME={safe_name}")
+                print(f"ATTACHMENT_{att_count}_TYPE={str(part.get_content_type() or '')}")
+                print(f"ATTACHMENT_{att_count}_SIZE={len(payload)}")
+                print(f"ATTACHMENT_{att_count}_SUPPLIER={supplier_dir}")
+                print(f"ATTACHMENT_{att_count}_WOULD_SAVE_TO={target}")
+
+                if supplier_dir != "Unknown":
+                    relevant_any = True
+
+                if download_mode:
+                    if supplier_dir == "Unknown":
+                        print(f"ATTACHMENT_{att_count}_SKIP=UNKNOWN_SUPPLIER")
+                        continue
+                    if not payload:
+                        print(f"ATTACHMENT_{att_count}_SAVE_FAIL=EMPTY_PAYLOAD")
+                        hard_fail = True
+                        break
+                    try:
+                        saved_path = save_attachment_bytes(var_root, supplier_dir, safe_name, payload)
+                        print(f"ATTACHMENT_{att_count}_SAVED_TO={saved_path}")
+                        saved_any = True
+                    except Exception as e:
+                        print(f"ATTACHMENT_{att_count}_SAVE_FAIL={e}")
+                        hard_fail = True
+                        break
+
             print(f"ATTACHMENT_COUNT={att_count}")
+
+            if att_count == 0:
+                print("UID_ACTION=ADVANCE_NO_ATTACHMENTS")
+                if download_mode:
+                    st["last_uid"] = max(int(st.get("last_uid", 0)), uid_i)
+                    st["uidvalidity"] = uidvalidity
+                    state_save(state_path, st)
+                    print(f"WATERMARK_UPDATED_TO={st['last_uid']}")
+            elif hard_fail:
+                print("UID_ACTION=HOLD_HARD_FAIL")
+                print("WATERMARK_NOT_UPDATED")
+            elif saved_any:
+                print("UID_ACTION=ADVANCE_SAVED")
+                if download_mode:
+                    st["last_uid"] = max(int(st.get("last_uid", 0)), uid_i)
+                    st["uidvalidity"] = uidvalidity
+                    state_save(state_path, st)
+                    print(f"WATERMARK_UPDATED_TO={st['last_uid']}")
+            elif relevant_any:
+                print("UID_ACTION=HOLD_RELEVANT_NOT_SAVED")
+                print("WATERMARK_NOT_UPDATED")
+            else:
+                print("UID_ACTION=ADVANCE_SKIP_UNKNOWN")
+                if download_mode:
+                    st["last_uid"] = max(int(st.get("last_uid", 0)), uid_i)
+                    st["uidvalidity"] = uidvalidity
+                    state_save(state_path, st)
+                    print(f"WATERMARK_UPDATED_TO={st['last_uid']}")
+
             print(f"--- MESSAGE UID {uid} END ---")
     return 0
 
