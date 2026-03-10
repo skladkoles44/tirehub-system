@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import imaplib, ssl, os, json, email, re, time, fnmatch, atexit, signal, hashlib
+import imaplib, ssl, os, json, email, re, time, fnmatch, atexit, signal, hashlib, shutil
 import yaml
 from email.header import decode_header, make_header
 from pathlib import Path
@@ -210,25 +210,66 @@ def build_conflict_name(filename: str, uid_i: int) -> str:
     suffix = p.suffix
     return f"{stem}__uid{uid_i}{suffix}"
 
-def save_attachment_bytes(var_root: Path, supplier_dir: str, filename: str, payload: bytes, uid_i: int):
-    target_dir = var_root / "inputs" / "inbox" / supplier_dir
+def make_observed_ts() -> str:
+    ns = time.time_ns()
+    sec = ns // 1_000_000_000
+    micros = (ns % 1_000_000_000) // 1_000
+    return time.strftime("%Y%m%d_%H%M%S", time.gmtime(sec)) + f"_{micros:06d}"
+
+def build_landing_name(observed_ts: str, payload_sha256: str, filename: str) -> str:
+    return f"{observed_ts}_{payload_sha256[:12]}_{filename}"
+
+def make_evidence_id(uid_i: int, msg) -> str:
+    seed = hdr(msg.get("Message-ID")) or hdr(msg.get("Date")) or str(uid_i)
+    suffix = hashlib.sha256(seed.encode("utf-8", "ignore")).hexdigest()[:12]
+    return f"mail_uid{uid_i}_{suffix}"
+
+def save_message_evidence(var_root: Path, evidence_id: str, raw: bytes) -> Path:
+    target_dir = var_root / "evidence"
     target_dir.mkdir(parents=True, exist_ok=True)
-    target = target_dir / filename
-    payload_sha256 = sha256_bytes(payload)
-
+    target = target_dir / f"{evidence_id}.eml"
     if target.exists():
-        target_sha256 = sha256_file(target)
-        if target_sha256 == payload_sha256:
-            return ("duplicate_same_content", target, payload_sha256)
-        target = target_dir / build_conflict_name(filename, uid_i)
+        return target
+    tmp = target.with_name(target.name + ".tmp")
+    with open(tmp, "wb") as f:
+        f.write(raw)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, target)
+    return target
 
+def append_routing_event(var_root: Path, event: dict) -> Path:
+    log_path = var_root / "logs" / "routing.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(log_path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(event, ensure_ascii=False) + "\n")
+        f.flush()
+        os.fsync(f.fileno())
+    return log_path
+
+def land_attachment_bytes(var_root: Path, filename: str, payload: bytes, payload_sha256: str, observed_ts: str) -> Path:
+    landing_dir = var_root / "landing"
+    landing_dir.mkdir(parents=True, exist_ok=True)
+    landing_name = build_landing_name(observed_ts, payload_sha256, filename)
+    target = landing_dir / landing_name
     tmp = target.with_name(target.name + ".tmp")
     with open(tmp, "wb") as f:
         f.write(payload)
         f.flush()
         os.fsync(f.fileno())
     os.replace(tmp, target)
+    return target
 
+def route_landed_attachment(var_root: Path, supplier_dir: str, landing_path: Path, filename: str, uid_i: int, payload_sha256: str):
+    target_dir = var_root / "inputs" / "inbox" / supplier_dir
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target = target_dir / filename
+    if target.exists():
+        target_sha256 = sha256_file(target)
+        if target_sha256 == payload_sha256:
+            return ("duplicate_same_content", target, payload_sha256)
+        target = target_dir / build_conflict_name(filename, uid_i)
+    shutil.copy2(str(landing_path), str(target))
     if target.name == filename:
         return ("saved", target, payload_sha256)
     return ("renamed_on_conflict", target, payload_sha256)
@@ -348,14 +389,21 @@ def main() -> int:
             uid_i = int(uid)
             print(f"--- MESSAGE UID {uid} BEGIN ---")
             msg = email.message_from_bytes(raw)
+            evidence_id = make_evidence_id(uid_i, msg)
             print("FROM=" + hdr(msg.get("From")))
             print("SUBJECT=" + hdr(msg.get("Subject")))
             print("DATE=" + hdr(msg.get("Date")))
+            print(f"EVIDENCE_ID={evidence_id}")
 
             att_count = 0
             saved_any = False
             relevant_any = False
             hard_fail = False
+            attachment_outcomes = []
+
+            if download_mode:
+                evidence_path = save_message_evidence(var_root, evidence_id, raw)
+                print(f"EVIDENCE_SAVED_TO={evidence_path}")
 
             for part in msg.walk():
                 if part.is_multipart():
@@ -368,47 +416,153 @@ def main() -> int:
                 att_count += 1
                 safe_name = sanitize_filename(fname or "")
                 payload = part.get_payload(decode=True) or b""
+                payload_sha256 = sha256_bytes(payload)
+                observed_ts = make_observed_ts()
                 supplier_dir = match_supplier_from_registry(safe_name, registry)
                 target = var_root / "inputs" / "inbox" / supplier_dir / safe_name
+                landing_target = var_root / "landing" / build_landing_name(observed_ts, payload_sha256, safe_name)
 
                 print(f"ATTACHMENT_{att_count}_SAFE_NAME={safe_name}")
                 print(f"ATTACHMENT_{att_count}_TYPE={str(part.get_content_type() or '')}")
                 print(f"ATTACHMENT_{att_count}_SIZE={len(payload)}")
                 print(f"ATTACHMENT_{att_count}_SUPPLIER={supplier_dir}")
+                print(f"ATTACHMENT_{att_count}_SHA256={payload_sha256}")
+                print(f"ATTACHMENT_{att_count}_WOULD_LAND_TO={landing_target}")
                 print(f"ATTACHMENT_{att_count}_WOULD_SAVE_TO={target}")
 
                 if supplier_dir != "Unknown":
                     relevant_any = True
 
                 if download_mode:
-                    if supplier_dir == "Unknown":
-                        print(f"ATTACHMENT_{att_count}_SKIP=UNKNOWN_SUPPLIER")
-                        continue
                     if not payload:
                         print(f"ATTACHMENT_{att_count}_SAVE_FAIL=EMPTY_PAYLOAD")
+                        append_routing_event(var_root, {
+                            "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                            "evidence_id": evidence_id,
+                            "dataset_key": "",
+                            "landing_file": "",
+                            "sha256_full": "",
+                            "original_name": safe_name,
+                            "supplier_candidate": supplier_dir,
+                            "inputs_path": str(target),
+                            "status": "rejected",
+                            "reason": "empty_payload",
+                        })
+                        attachment_outcomes.append("rejected")
                         hard_fail = True
                         break
+                    landing_path = None
                     try:
-                        save_status, saved_path, payload_sha256 = save_attachment_bytes(var_root, supplier_dir, safe_name, payload, uid_i)
+                        landing_path = land_attachment_bytes(var_root, safe_name, payload, payload_sha256, observed_ts)
+                        print(f"ATTACHMENT_{att_count}_LANDED_TO={landing_path}")
+                        append_routing_event(var_root, {
+                            "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                            "evidence_id": evidence_id,
+                            "dataset_key": payload_sha256[:12],
+                            "landing_file": landing_path.name,
+                            "sha256_full": payload_sha256,
+                            "original_name": safe_name,
+                            "supplier_candidate": supplier_dir,
+                            "inputs_path": str(target),
+                            "status": "landed",
+                            "reason": None,
+                        })
+                        if supplier_dir == "Unknown":
+                            print(f"ATTACHMENT_{att_count}_SKIP=UNKNOWN_SUPPLIER")
+                            append_routing_event(var_root, {
+                                "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                                "evidence_id": evidence_id,
+                                "dataset_key": payload_sha256[:12],
+                                "landing_file": landing_path.name,
+                                "sha256_full": payload_sha256,
+                                "original_name": safe_name,
+                                "supplier_candidate": supplier_dir,
+                                "inputs_path": str(target),
+                                "status": "held",
+                                "reason": "unknown_supplier",
+                            })
+                            attachment_outcomes.append("held")
+                            continue
+                        save_status, saved_path, payload_sha256 = route_landed_attachment(var_root, supplier_dir, landing_path, safe_name, uid_i, payload_sha256)
                         print(f"ATTACHMENT_{att_count}_SHA256={payload_sha256}")
                         if save_status == "duplicate_same_content":
                             print(f"ATTACHMENT_{att_count}_OUTCOME=DUPLICATE_SAME_CONTENT")
                             print(f"ATTACHMENT_{att_count}_EXISTS_AT={saved_path}")
+                            append_routing_event(var_root, {
+                                "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                                "evidence_id": evidence_id,
+                                "dataset_key": payload_sha256[:12],
+                                "landing_file": landing_path.name,
+                                "sha256_full": payload_sha256,
+                                "original_name": safe_name,
+                                "supplier_candidate": supplier_dir,
+                                "inputs_path": str(saved_path),
+                                "status": "duplicate",
+                                "reason": "duplicate_same_content",
+                            })
+                            attachment_outcomes.append("duplicate")
                             saved_any = True
                         elif save_status == "renamed_on_conflict":
                             print(f"ATTACHMENT_{att_count}_OUTCOME=RENAMED_ON_CONFLICT")
                             print(f"ATTACHMENT_{att_count}_SAVED_TO={saved_path}")
+                            append_routing_event(var_root, {
+                                "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                                "evidence_id": evidence_id,
+                                "dataset_key": payload_sha256[:12],
+                                "landing_file": landing_path.name,
+                                "sha256_full": payload_sha256,
+                                "original_name": safe_name,
+                                "supplier_candidate": supplier_dir,
+                                "inputs_path": str(saved_path),
+                                "status": "routed",
+                                "reason": "renamed_on_conflict",
+                            })
+                            attachment_outcomes.append("routed")
                             saved_any = True
                         else:
                             print(f"ATTACHMENT_{att_count}_OUTCOME=SAVED")
                             print(f"ATTACHMENT_{att_count}_SAVED_TO={saved_path}")
+                            append_routing_event(var_root, {
+                                "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                                "evidence_id": evidence_id,
+                                "dataset_key": payload_sha256[:12],
+                                "landing_file": landing_path.name,
+                                "sha256_full": payload_sha256,
+                                "original_name": safe_name,
+                                "supplier_candidate": supplier_dir,
+                                "inputs_path": str(saved_path),
+                                "status": "routed",
+                                "reason": None,
+                            })
+                            attachment_outcomes.append("routed")
                             saved_any = True
                     except Exception as e:
                         print(f"ATTACHMENT_{att_count}_SAVE_FAIL={e}")
+                        append_routing_event(var_root, {
+                            "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                            "evidence_id": evidence_id,
+                            "dataset_key": payload_sha256[:12] if payload_sha256 else "",
+                            "landing_file": landing_path.name if landing_path else "",
+                            "sha256_full": payload_sha256 if payload_sha256 else "",
+                            "original_name": safe_name,
+                            "supplier_candidate": supplier_dir,
+                            "inputs_path": str(target),
+                            "status": "rejected",
+                            "reason": str(e),
+                        })
+                        attachment_outcomes.append("rejected")
                         hard_fail = True
                         break
 
             print(f"ATTACHMENT_COUNT={att_count}")
+            if attachment_outcomes:
+                print("ATTACHMENT_OUTCOMES=" + ",".join(attachment_outcomes))
+
+            all_terminal = (att_count > 0 and len(attachment_outcomes) == att_count)
+            any_rejected = "rejected" in attachment_outcomes
+            any_held = "held" in attachment_outcomes
+            all_saved = all_terminal and all(x in {"routed", "duplicate"} for x in attachment_outcomes)
+            all_unknown_held = all_terminal and attachment_outcomes and all(x == "held" for x in attachment_outcomes) and not relevant_any
 
             if att_count == 0:
                 print("UID_ACTION=ADVANCE_NO_ATTACHMENTS")
@@ -417,16 +571,30 @@ def main() -> int:
                     st["uidvalidity"] = uidvalidity
                     state_save(state_path, st)
                     print(f"WATERMARK_UPDATED_TO={st['last_uid']}")
-            elif hard_fail:
+            elif any_rejected or hard_fail:
                 print("UID_ACTION=HOLD_HARD_FAIL")
                 print("WATERMARK_NOT_UPDATED")
-            elif saved_any:
+            elif all_saved:
                 print("UID_ACTION=ADVANCE_SAVED")
                 if download_mode:
                     st["last_uid"] = max(int(st.get("last_uid", 0)), uid_i)
                     st["uidvalidity"] = uidvalidity
                     state_save(state_path, st)
                     print(f"WATERMARK_UPDATED_TO={st['last_uid']}")
+            elif any_held:
+                if all_unknown_held and unknown_policy == "advance":
+                    print("UID_ACTION=ADVANCE_SKIP_UNKNOWN")
+                    if download_mode:
+                        st["last_uid"] = max(int(st.get("last_uid", 0)), uid_i)
+                        st["uidvalidity"] = uidvalidity
+                        state_save(state_path, st)
+                        print(f"WATERMARK_UPDATED_TO={st['last_uid']}")
+                elif all_unknown_held:
+                    print("UID_ACTION=HOLD_UNKNOWN")
+                    print("WATERMARK_NOT_UPDATED")
+                else:
+                    print("UID_ACTION=HOLD_RELEVANT_NOT_SAVED")
+                    print("WATERMARK_NOT_UPDATED")
             elif relevant_any:
                 print("UID_ACTION=HOLD_RELEVANT_NOT_SAVED")
                 print("WATERMARK_NOT_UPDATED")
