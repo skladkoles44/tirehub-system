@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import imaplib, ssl, os, json, email, re, time, fnmatch, atexit, signal
+import imaplib, ssl, os, json, email, re, time, fnmatch, atexit, signal, hashlib
 import yaml
 from email.header import decode_header, make_header
 from pathlib import Path
@@ -194,17 +194,44 @@ def match_supplier_from_registry(filename: str, registry) -> str:
                 return inbox_dir
     return "Unknown"
 
-def save_attachment_bytes(var_root: Path, supplier_dir: str, filename: str, payload: bytes) -> Path:
+def sha256_bytes(payload: bytes) -> str:
+    return hashlib.sha256(payload).hexdigest()
+
+def sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+def build_conflict_name(filename: str, uid_i: int) -> str:
+    p = Path(filename)
+    stem = p.stem or "attachment"
+    suffix = p.suffix
+    return f"{stem}__uid{uid_i}{suffix}"
+
+def save_attachment_bytes(var_root: Path, supplier_dir: str, filename: str, payload: bytes, uid_i: int):
     target_dir = var_root / "inputs" / "inbox" / supplier_dir
     target_dir.mkdir(parents=True, exist_ok=True)
     target = target_dir / filename
+    payload_sha256 = sha256_bytes(payload)
+
+    if target.exists():
+        target_sha256 = sha256_file(target)
+        if target_sha256 == payload_sha256:
+            return ("duplicate_same_content", target, payload_sha256)
+        target = target_dir / build_conflict_name(filename, uid_i)
+
     tmp = target.with_name(target.name + ".tmp")
     with open(tmp, "wb") as f:
         f.write(payload)
         f.flush()
         os.fsync(f.fileno())
     os.replace(tmp, target)
-    return target
+
+    if target.name == filename:
+        return ("saved", target, payload_sha256)
+    return ("renamed_on_conflict", target, payload_sha256)
 
 def main() -> int:
     env_file = os.environ.get("MAIL_INGEST_ENV_FILE", "").strip()
@@ -231,6 +258,9 @@ def main() -> int:
     bootstrap = os.environ.get("MAIL_INGEST_BOOTSTRAP", "0").strip() == "1"
     force_bootstrap = os.environ.get("MAIL_INGEST_FORCE_BOOTSTRAP", "0").strip() == "1"
     download_mode = os.environ.get("MAIL_INGEST_DOWNLOAD", "0").strip() == "1"
+    unknown_policy = (os.environ.get("MAIL_INGEST_UNKNOWN_POLICY", "hold").strip().lower() or "hold")
+    if unknown_policy not in {"hold", "advance"}:
+        raise SystemExit(f"ENV_BAD: MAIL_INGEST_UNKNOWN_POLICY={unknown_policy}")
 
     print("== config ==")
     print(f"IMAP_HOST={host}")
@@ -242,6 +272,7 @@ def main() -> int:
     print(f"MAIL_INGEST_BOOTSTRAP={'1' if bootstrap else '0'}")
     print(f"MAIL_INGEST_FORCE_BOOTSTRAP={'1' if force_bootstrap else '0'}")
     print(f"MAIL_INGEST_DOWNLOAD={'1' if download_mode else '0'}")
+    print(f"MAIL_INGEST_UNKNOWN_POLICY={unknown_policy}")
     print(f"ETL_VAR_ROOT={var_root}")
     print(f"SUPPLIERS_REGISTRY_PATH={registry_path}")
     print(f"SUPPLIERS_REGISTRY_COUNT={len(registry)}")
@@ -358,9 +389,20 @@ def main() -> int:
                         hard_fail = True
                         break
                     try:
-                        saved_path = save_attachment_bytes(var_root, supplier_dir, safe_name, payload)
-                        print(f"ATTACHMENT_{att_count}_SAVED_TO={saved_path}")
-                        saved_any = True
+                        save_status, saved_path, payload_sha256 = save_attachment_bytes(var_root, supplier_dir, safe_name, payload, uid_i)
+                        print(f"ATTACHMENT_{att_count}_SHA256={payload_sha256}")
+                        if save_status == "duplicate_same_content":
+                            print(f"ATTACHMENT_{att_count}_OUTCOME=DUPLICATE_SAME_CONTENT")
+                            print(f"ATTACHMENT_{att_count}_EXISTS_AT={saved_path}")
+                            saved_any = True
+                        elif save_status == "renamed_on_conflict":
+                            print(f"ATTACHMENT_{att_count}_OUTCOME=RENAMED_ON_CONFLICT")
+                            print(f"ATTACHMENT_{att_count}_SAVED_TO={saved_path}")
+                            saved_any = True
+                        else:
+                            print(f"ATTACHMENT_{att_count}_OUTCOME=SAVED")
+                            print(f"ATTACHMENT_{att_count}_SAVED_TO={saved_path}")
+                            saved_any = True
                     except Exception as e:
                         print(f"ATTACHMENT_{att_count}_SAVE_FAIL={e}")
                         hard_fail = True
@@ -389,12 +431,16 @@ def main() -> int:
                 print("UID_ACTION=HOLD_RELEVANT_NOT_SAVED")
                 print("WATERMARK_NOT_UPDATED")
             else:
-                print("UID_ACTION=ADVANCE_SKIP_UNKNOWN")
-                if download_mode:
-                    st["last_uid"] = max(int(st.get("last_uid", 0)), uid_i)
-                    st["uidvalidity"] = uidvalidity
-                    state_save(state_path, st)
-                    print(f"WATERMARK_UPDATED_TO={st['last_uid']}")
+                if unknown_policy == "advance":
+                    print("UID_ACTION=ADVANCE_SKIP_UNKNOWN")
+                    if download_mode:
+                        st["last_uid"] = max(int(st.get("last_uid", 0)), uid_i)
+                        st["uidvalidity"] = uidvalidity
+                        state_save(state_path, st)
+                        print(f"WATERMARK_UPDATED_TO={st['last_uid']}")
+                else:
+                    print("UID_ACTION=HOLD_UNKNOWN")
+                    print("WATERMARK_NOT_UPDATED")
 
             print(f"--- MESSAGE UID {uid} END ---")
     return 0
