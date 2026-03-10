@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import imaplib, ssl, os, json, email, re, time
+import imaplib, ssl, os, json, email, re, time, fnmatch
 from email.header import decode_header, make_header
 from pathlib import Path
 
@@ -78,6 +78,66 @@ def guess_supplier_from_filename(filename: str) -> str:
         return "Shinservice"
     return "Unknown"
 
+def load_suppliers_registry(path: Path):
+    if not path.exists():
+        return []
+    lines = path.read_text(encoding="utf-8").splitlines()
+    suppliers = []
+    cur = None
+    in_patterns = False
+
+    for raw in lines:
+        line = raw.rstrip()
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+
+        if line.startswith("  - supplier: "):
+            if cur:
+                suppliers.append(cur)
+            cur = {
+                "supplier": line.split(":", 1)[1].strip().strip('"').strip("'"),
+                "inbox_dir": "",
+                "patterns": [],
+            }
+            in_patterns = False
+            continue
+
+        if cur is None:
+            continue
+
+        if line.startswith("    inbox_dir: "):
+            cur["inbox_dir"] = line.split(":", 1)[1].strip().strip('"').strip("'")
+            in_patterns = False
+            continue
+
+        if line.startswith("    filename_patterns:"):
+            in_patterns = True
+            continue
+
+        if in_patterns and line.startswith("      - "):
+            pat = line.split("-", 1)[1].strip().strip('"').strip("'")
+            cur["patterns"].append(pat)
+            continue
+
+        if line.startswith("    ") and not line.startswith("      - "):
+            in_patterns = False
+
+    if cur:
+        suppliers.append(cur)
+
+    return suppliers
+
+def match_supplier_from_registry(filename: str, registry) -> str:
+    n = filename or ""
+    n_low = n.lower()
+
+    for item in registry:
+        inbox_dir = item.get("inbox_dir") or item.get("supplier") or "Unknown"
+        for pat in item.get("patterns", []):
+            if fnmatch.fnmatchcase(n, pat) or fnmatch.fnmatchcase(n_low, pat.lower()):
+                return inbox_dir
+    return "Unknown"
+
 def save_attachment_bytes(var_root: Path, supplier_dir: str, filename: str, payload: bytes) -> Path:
     target_dir = var_root / "inputs" / "inbox" / supplier_dir
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -103,6 +163,8 @@ def main() -> int:
     max_msgs = int(os.environ.get("MAIL_INGEST_DRYRUN_MAX", "10"))
     state_path = Path(need("MAIL_INGEST_STATE"))
     var_root = Path(need("ETL_VAR_ROOT"))
+    registry_path = Path(os.environ.get("SUPPLIERS_REGISTRY_PATH", "config/suppliers_registry.yaml"))
+    registry = load_suppliers_registry(registry_path)
     bootstrap = os.environ.get("MAIL_INGEST_BOOTSTRAP", "0").strip() == "1"
     force_bootstrap = os.environ.get("MAIL_INGEST_FORCE_BOOTSTRAP", "0").strip() == "1"
     download_mode = os.environ.get("MAIL_INGEST_DOWNLOAD", "0").strip() == "1"
@@ -118,6 +180,8 @@ def main() -> int:
     print(f"MAIL_INGEST_FORCE_BOOTSTRAP={'1' if force_bootstrap else '0'}")
     print(f"MAIL_INGEST_DOWNLOAD={'1' if download_mode else '0'}")
     print(f"ETL_VAR_ROOT={var_root}")
+    print(f"SUPPLIERS_REGISTRY_PATH={registry_path}")
+    print(f"SUPPLIERS_REGISTRY_COUNT={len(registry)}")
 
     ctx = ssl.create_default_context()
     with imaplib.IMAP4_SSL(host, port, ssl_context=ctx) as m:
@@ -210,7 +274,9 @@ def main() -> int:
                 att_count += 1
                 safe_name = sanitize_filename(fname or "")
                 payload = part.get_payload(decode=True) or b""
-                supplier_dir = guess_supplier_from_filename(safe_name)
+                supplier_dir = match_supplier_from_registry(safe_name, registry)
+                if supplier_dir == "Unknown":
+                    supplier_dir = guess_supplier_from_filename(safe_name)
                 target = var_root / "inputs" / "inbox" / supplier_dir / safe_name
 
                 print(f"ATTACHMENT_{att_count}_SAFE_NAME={safe_name}")
