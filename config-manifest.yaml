@@ -1,0 +1,153 @@
+version: 1
+
+variables:
+
+  BRINEX_XLSX_PATH:
+    description: "Path to Brinex XLSX file"
+    level: job
+    scope: brinex_job
+    required: false
+    secret: false
+    derived: false
+    example: "/path/to/file.xlsx"
+    introduced_in: "brinex"
+
+  CURATED_ROOT:
+    description: "Curated data (ETL_DATA_ROOT/curated)"
+    level: platform
+    scope: core_paths
+    required: true
+    secret: false
+    derived: true
+    example: "derived from ETL_DATA_ROOT"
+    introduced_in: "cleanup-wave"
+
+  DB_HOST:
+    description: "Database host"
+    level: runtime
+    scope: db
+    required: false
+    secret: false
+    derived: false
+    example: "localhost"
+    introduced_in: "smoke"
+
+  DB_NAME:
+    description: "Database name"
+    level: runtime
+    scope: db
+    required: false
+    secret: false
+    derived: false
+    example: "tirehub"
+    introduced_in: "smoke"
+
+  DB_PASS:
+    description: "Database password"
+    level: runtime
+    scope: db
+    required: false
+    secret: true
+    derived: false
+    example: "secret"
+    introduced_in: "smoke"
+
+  ETL_DATA_ROOT:
+    description: "Root directory for persistent data (SSOT, curated)"
+    level: platform
+    scope: core_paths
+    required: true
+    secret: false
+    derived: false
+    example: "/storage/emulated/0/Download/ETL/data"
+    introduced_in: "cleanup-wave"
+
+  ETL_REPO_ROOT:
+    description: "Root directory of the repository"
+    level: platform
+    scope: core_paths
+    required: true
+    secret: false
+    derived: false
+    example: "/data/data/com.termux/files/home/tirehub-system"
+    introduced_in: "cleanup-wave"
+
+  ETL_VAR_ROOT:
+    description: "Root directory for runtime data (locks, state, logs, secrets)"
+    level: platform
+    scope: core_paths
+    required: true
+    secret: false
+    derived: false
+    example: "/data/data/com.termux/files/home/var/tirehub-system"
+    introduced_in: "cleanup-wave"
+
+  IMAP_HOST:
+    description: "IMAP server hostname"
+    level: runtime
+    scope: mail_ingest
+    required: true
+    secret: false
+    derived: false
+    example: "imap.yandex.ru"
+    introduced_in: "mail_ingest"
+
+  IMAP_PASS:
+    description: "IMAP password"
+    level: runtime
+    scope: mail_ingest
+    required: true
+    secret: true
+    derived: false
+    example: "secret"
+    introduced_in: "mail_ingest"
+
+  MAIL_INGEST_DOWNLOAD:
+    description: "Enable actual download (vs dry-run)"
+    level: runtime
+    scope: mail_ingest
+    required: false
+    secret: false
+    derived: false
+    default: "0"
+    example: "1"
+    introduced_in: "mail_ingest"
+
+  MAIL_INGEST_UNKNOWN_POLICY:
+    description: "What to do with unknown suppliers"
+    level: runtime
+    scope: mail_ingest
+    required: true
+    secret: false
+    derived: false
+    default: "hold"
+    example: "hold"
+    introduced_in: "mail_ingest"
+
+  SSOT_ROOT:
+    description: "Single source of truth data (ETL_DATA_ROOT/ssot)"
+    level: platform
+    scope: core_paths
+    required: true
+    secret: false
+    derived: true
+    example: "derived from ETL_DATA_ROOT"
+    introduced_in: "cleanup-wave"
+
+scopes:
+
+  brinex_job:
+    description: "Brinex supplier ingestion job"
+    owner: "ingestion-team"
+
+  core_paths:
+    description: "Core platform paths"
+    owner: "platform-team"
+
+  db:
+    description: "Database connection"
+    owner: "platform-team"
+
+  mail_ingest:
+    description: "Mail ingestion connector"
+    owner: "ingestion-team"
