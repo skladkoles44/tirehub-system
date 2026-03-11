@@ -3,14 +3,14 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null || true)"
 [ -n "$REPO_ROOT" ] || { echo "Repo root not found"; exit 1; }
 
-set -u
-set -o pipefail
+set -euo pipefail
 
 PY="${PYTHON_BIN:-$(command -v python3)}"
 
-XLSX="${BRINEX_XLSX_PATH:-/storage/emulated/0/Download/ETL/прайсотБринэксКозловской (1).xlsx}"
-SSOT="${SSOT_ROOT:-/storage/emulated/0/Download/ETL/etl_data/raw_v1/ssot}"
-ROOT="${BRINEX_RUN_ROOT:-$TMP_ROOT/brinex_xlsx_all_sheets_v3}"
+XLSX="${BRINEX_XLSX_PATH:?BRINEX_XLSX_PATH not set}"
+export BRINEX_XLSX_PATH
+SSOT="${SSOT_ROOT:?SSOT_ROOT not set}"
+ROOT="${BRINEX_RUN_ROOT:-${ETL_VAR_ROOT:?ETL_VAR_ROOT not set}/tmp/brinex_xlsx_all_sheets_v3}"
 
 mkdir -p "$ROOT"
 

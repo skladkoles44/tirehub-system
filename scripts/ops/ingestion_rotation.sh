@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VAR_ROOT="/data/data/com.termux/files/home/var/tirehub-system"
+VAR_ROOT="${ETL_VAR_ROOT:?ETL_VAR_ROOT not set}"
 EVIDENCE_DIR="$VAR_ROOT/evidence"
 LANDING_DIR="$VAR_ROOT/landing"
 LOG_DIR="$VAR_ROOT/logs"

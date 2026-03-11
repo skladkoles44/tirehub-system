@@ -1,12 +1,13 @@
-#!/data/data/com.termux/files/usr/bin/bash
+#!/usr/bin/env bash
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null || true)"
 [ -n "$REPO_ROOT" ] || { echo "Repo root not found"; exit 1; }
 set -euo pipefail
 
-XLSX="/storage/emulated/0/Download/ETL/прайсотБринэксКозловской (1).xlsx"
-SSOT="/storage/emulated/0/Download/ETL/etl_data/raw_v1/ssot"
-ROOT="/storage/emulated/0/Download/ETL/etl_ops/tmp/brinex_xlsx_all_sheets"
+XLSX="${BRINEX_XLSX_PATH:?BRINEX_XLSX_PATH not set}"
+export BRINEX_XLSX_PATH
+SSOT="${SSOT_ROOT:?SSOT_ROOT not set}"
+ROOT="${BRINEX_RUN_ROOT:-${ETL_VAR_ROOT:?ETL_VAR_ROOT not set}/tmp/brinex_xlsx_all_sheets}"
 
 mkdir -p "$ROOT"
 
@@ -14,7 +15,8 @@ mkdir -p "$ROOT"
 SHEETS=$(python3 - << 'PY'
 from openpyxl import load_workbook
 from pathlib import Path
-xlsx = Path("/storage/emulated/0/Download/ETL/прайсотБринэксКозловской (1).xlsx")
+import os
+xlsx = Path(os.environ["BRINEX_XLSX_PATH"])
 NEEDED_HEADERS = {"Код товара (goods_id)","Номенклатура","Код товара (product_id)","Артикул","Склад","Цена","Остаток на складе"}
 def norm(x): return "" if x is None else str(x).strip()
 wb = load_workbook(xlsx, data_only=True, read_only=True)

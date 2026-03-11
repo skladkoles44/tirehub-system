@@ -11,7 +11,7 @@ die(){ echo "[$(ts)] ERROR: $*" >&2; exit 1; }
 
 [[ -n "$RUN_ID" ]] || die "RUN_ID is required. Usage: $0 <db> <run_id>"
 
-LOG_DIR="/tmp/ssot_smoke_logs"
+LOG_DIR="${SSOT_SMOKE_LOG_DIR:-${ETL_VAR_ROOT:?ETL_VAR_ROOT not set}/logs/smoke}"
 mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/$(date +%Y%m%d_%H%M%S)_${DB}_run_${RUN_ID}.log"
 

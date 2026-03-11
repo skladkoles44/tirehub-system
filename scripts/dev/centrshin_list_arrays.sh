@@ -1,6 +1,9 @@
 #!/bin/bash
 set -euo pipefail
-cd "/storage/emulated/0/Download/ETL/tirehub-system" || exit 1
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null || true)"
+[ -n "$REPO_ROOT" ] || { echo "Repo root not found"; exit 1; }
+cd "$REPO_ROOT"
 INBOX="inputs/inbox/Centrshin"
 
 # Самый свежий json (без find -printf, совместимо с Termux)
