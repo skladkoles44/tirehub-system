@@ -5,6 +5,31 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
 
+_BOOTSTRAP_ROOT = next(
+    (
+        c for c in (
+            Path(__file__).resolve().parent,
+            *Path(__file__).resolve().parent.parents,
+        )
+        if (c / "common" / "paths.py").exists()
+    ),
+    None,
+)
+if _BOOTSTRAP_ROOT and str(_BOOTSTRAP_ROOT) not in sys.path:
+    sys.path.insert(0, str(_BOOTSTRAP_ROOT))
+
+from common.paths import repo_path
+
+
+def resolve_cli_path(value: str) -> Path:
+    p = Path(value)
+    if p.is_absolute():
+        return p
+    return repo_path(*p.parts, start=Path(__file__))
+
+
+def _repo_str(*parts: str) -> str:
+    return str(repo_path(*parts, start=Path(__file__)))
 
 
 def _norm_supplier_name(s: str) -> str:
@@ -90,7 +115,7 @@ class KoloboxAdapter(SupplierAdapter):
         # - kolobox_diski_xls_v1.yaml (diski 17 cols)
         # - kolobox_komplektatsii_xls_v1.yaml (komplektatsii 18 cols)
         # - kolobox.yaml (baseline, e.g. shiny 21 cols)
-        mp_dir = Path("mappings/suppliers")
+        mp_dir = repo_path("mappings", "suppliers", start=Path(__file__))
         if layout == "truck":
             return mp_dir / "kolobox_truck_xls_v1.yaml"
         if layout == "diski":
@@ -100,7 +125,7 @@ class KoloboxAdapter(SupplierAdapter):
         return mp_dir / "kolobox.yaml"
 
     def plan(self, file: Path, run_id: str, out_dir: Path) -> Optional[Plan]:
-        emitter = Path("scripts/ingestion/kolobox/emit_kolobox_ndjson_v1.py")
+        emitter = repo_path("scripts", "ingestion", "kolobox", "emit_kolobox_ndjson_v1.py", start=Path(__file__))
         if not emitter.exists():
             return None
         layout = self._detect_layout(file)
@@ -130,8 +155,8 @@ class CentrshinAdapter(SupplierAdapter):
     def plan(self, file: Path, run_id: str, out_dir: Path) -> Optional[Plan]:
         # Centrshin: JSON full dump (stock.json). Each top-level array key = one task.
         if file.suffix.lower() == ".json":
-            emitter = Path("scripts/ingestion/centrshin/emit_centrshin_json_category_v1.py")
-            mapping = Path("mappings/suppliers/centrshin_json_v1.yaml")
+            emitter = repo_path("scripts", "ingestion", "centrshin", "emit_centrshin_json_category_v1.py", start=Path(__file__))
+            mapping = repo_path("mappings", "suppliers", "centrshin_json_v1.yaml", start=Path(__file__))
             if not emitter.exists() or not mapping.exists():
                 return None
             try:
@@ -183,10 +208,10 @@ def run_plan(pl: Plan) -> Dict[str, Any]:
     cmd = [
         sys.executable,
         str(pl.emitter),
-        "--file", safe_relpath(pl.file),
+        "--file", str(pl.file),
         "--layout", pl.layout,
         "--run-id", pl.run_id,
-        "--mapping", safe_relpath(pl.mapping),
+        "--mapping", str(pl.mapping),
         "--out", str(pl.out_ndjson),
         "--stats-out", str(pl.out_stats),
     ]
@@ -221,8 +246,8 @@ def main() -> int:
 
     only_supplier = (args.only_supplier or "").strip().lower()
 
-    inbox_root = Path(args.root)
-    out_root = Path(args.out)
+    inbox_root = resolve_cli_path(args.root)
+    out_root = resolve_cli_path(args.out)
 
     files: List[Path] = []
     if inbox_root.exists():
@@ -314,8 +339,8 @@ def _add_centrshin_tasks(tasks, supplier_guess: str, file_path: str, run_id: str
         "supplier_id": "centrshin",
         "file": file_path,
         "layout": "shiny",
-        "mapping": "mappings/suppliers/centrshin_shiny_xlsx_v1.yaml",
-        "emitter": "scripts/ingestion/centrshin/emit_centrshin_xlsx_shiny_v1.py",
+        "mapping": _repo_str("mappings", "suppliers", "centrshin_shiny_xlsx_v1.yaml"),
+        "emitter": _repo_str("scripts", "ingestion", "centrshin", "emit_centrshin_xlsx_shiny_v1.py"),
         "args_extra": ["--sheet", "Шины"],
     })
     # emit diski
@@ -323,8 +348,8 @@ def _add_centrshin_tasks(tasks, supplier_guess: str, file_path: str, run_id: str
         "supplier_id": "centrshin",
         "file": file_path,
         "layout": "diski",
-        "mapping": "mappings/suppliers/centrshin_diski_xlsx_v1.yaml",
-        "emitter": "scripts/ingestion/centrshin/emit_centrshin_xlsx_diski_v1.py",
+        "mapping": _repo_str("mappings", "suppliers", "centrshin_diski_xlsx_v1.yaml"),
+        "emitter": _repo_str("scripts", "ingestion", "centrshin", "emit_centrshin_xlsx_diski_v1.py"),
         "args_extra": ["--sheet", "Диски"],
     })
     return True

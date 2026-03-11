@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null || true)"
+[ -n "$REPO_ROOT" ] || { echo "Repo root not found"; exit 1; }
+
 set -euo pipefail
 
 PY="${PYTHON_BIN:?PYTHON_BIN not set}"
@@ -17,7 +21,7 @@ echo "=== RUNS_ROOT ==="
 echo "$RUNS_ROOT"
 echo
 
-SHEETS="$("$PY" scripts/ingestion/brinex/list_nonempty_sheets_v1.py "$XLSX")"
+SHEETS="$("$PY" "$REPO_ROOT/scripts/ingestion/brinex/list_nonempty_sheets_v1.py" "$XLSX")"
 
 echo "=== SHEETS ==="
 echo "$SHEETS"
@@ -37,7 +41,7 @@ while IFS= read -r sheet; do
   echo "=== RUN sheet: $sheet -> $OUT ==="
 
   # 1) EMITTER
-  "$PY" scripts/ingestion/brinex/emit_brinex_xlsx_sheet_v1.py \
+  "$PY" "$REPO_ROOT/scripts/ingestion/brinex/emit_brinex_xlsx_sheet_v1.py" \
     "$XLSX" "$sheet" "$OUT" || {
       rc=$?
       echo "FAIL emitter rc=$rc sheet=$sheet"
@@ -85,7 +89,7 @@ PY
 
   # 3) GATE
   set +e
-  "$PY" scripts/ingestion/kolobox/tirehub_gate_v1.py \
+  "$PY" "$REPO_ROOT/scripts/ingestion/kolobox/tirehub_gate_v1.py" \
     --stats "$OUT/stats.json" \
     --out "$OUT/verdict.json" \
     --baseline "$OUT/baseline.json"
@@ -99,7 +103,7 @@ PY
   fi
 
   # 4) INGEST
-  "$PY" scripts/ingestion/tirehub_ingest_v1.py \
+  "$PY" "$REPO_ROOT/scripts/ingestion/tirehub_ingest_v1.py" \
     --ssot-root "$SSOT" \
     --good "$OUT/good.ndjson" \
     --stats "$OUT/stats.json" \

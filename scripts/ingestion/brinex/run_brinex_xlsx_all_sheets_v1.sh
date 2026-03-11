@@ -1,4 +1,7 @@
 #!/data/data/com.termux/files/usr/bin/bash
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null || true)"
+[ -n "$REPO_ROOT" ] || { echo "Repo root not found"; exit 1; }
 set -euo pipefail
 
 XLSX="/storage/emulated/0/Download/ETL/прайсотБринэксКозловской (1).xlsx"
@@ -48,7 +51,7 @@ while IFS= read -r sheet; do
   echo "=== RUN sheet: $sheet -> $OUT ==="
 
   # emitter
-  if ! python3 scripts/ingestion/brinex/emit_brinex_xlsx_sheet_v1.py "$XLSX" "$sheet" "$OUT"; then
+  if ! python3 "$REPO_ROOT/scripts/ingestion/brinex/emit_brinex_xlsx_sheet_v1.py" "$XLSX" "$sheet" "$OUT"; then
     echo "SKIP/FAIL emitter sheet=$sheet"
     fail_count=$((fail_count+1))
     continue
@@ -77,13 +80,13 @@ print("OK: baseline")
 PY
 
   # gate
-  python3 scripts/ingestion/kolobox/tirehub_gate_v1.py \
+  python3 "$REPO_ROOT/scripts/ingestion/kolobox/tirehub_gate_v1.py" \
     --stats "$OUT/stats.json" \
     --out "$OUT/verdict.json" \
     --baseline "$OUT/baseline.json"
 
   # ingest
-  python3 scripts/ingestion/tirehub_ingest_v1.py \
+  python3 "$REPO_ROOT/scripts/ingestion/tirehub_ingest_v1.py" \
     --ssot-root "$SSOT" \
     --good "$OUT/good.ndjson" \
     --stats "$OUT/stats.json" \
@@ -91,7 +94,7 @@ PY
 
   echo "OK: ingested sheet=$sheet"
   echo
-done <<< "$SHEETS"
+done < <(printf "%s\n" "$SHEETS")
 
 echo "=== SUMMARY ==="
 echo "sheets_attempted=$ok_count"
