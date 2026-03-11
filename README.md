@@ -53,3 +53,4 @@ Delivery semantics: at-least-once with bounded retries and dead-lettering.
 - [MASTER SYSTEM MAP (LLM)](docs/architecture/MASTER_SYSTEM_MAP_LLM.md)
 - [COMPONENT MAP (LLM)](docs/architecture/COMPONENT_MAP_LLM.md)
 - [DATA FLOW DIAGRAM (LLM)](docs/architecture/DATA_FLOW_DIAGRAM_LLM.md)
+- [SYSTEM LAYERS DIAGRAM (LLM)](docs/architecture/SYSTEM_LAYERS_DIAGRAM_LLM.md)

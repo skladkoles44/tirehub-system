@@ -251,4 +251,4 @@ supplier files
 - MASTER SYSTEM MAP = top-level machine map
 - COMPONENT MAP = component inventory and boundaries
 - DATA FLOW DIAGRAM = text-form end-to-end data flow
-
+- SYSTEM LAYERS DIAGRAM = stacked architectural layers view
