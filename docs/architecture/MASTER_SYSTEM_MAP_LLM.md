@@ -246,3 +246,9 @@ supplier files
 -> product identity
 -> catalog items
 -> supplier offers linked to catalog
+
+## 23. RELATED LLM DOCS
+- MASTER SYSTEM MAP = top-level machine map
+- COMPONENT MAP = component inventory and boundaries
+- DATA FLOW DIAGRAM = text-form end-to-end data flow
+
