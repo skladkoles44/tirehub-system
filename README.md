@@ -49,3 +49,5 @@ Operational verification highlights:
 
 Delivery semantics: at-least-once with bounded retries and dead-lettering.
 
+## LLM docs
+- [MASTER SYSTEM MAP (LLM)](docs/architecture/MASTER_SYSTEM_MAP_LLM.md)
