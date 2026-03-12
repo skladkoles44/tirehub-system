@@ -198,7 +198,8 @@ def main():
             row_flags = []
             for fl in [qflag, pflag]:
                 if fl:
-                    row_flags.append(fl)
+                    if fl != "price_coerced":
+                        row_flags.append(fl)
                     flags_counts[fl] = flags_counts.get(fl, 0) + 1
 
             sku_candidate = product_id if product_id not in (None, "") else article
