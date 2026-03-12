@@ -1,29 +1,44 @@
 #!/usr/bin/env python3
 from pathlib import Path
 import sys
-import yaml
 import re
+import yaml
 
 REPO = Path(".").resolve()
 MANIFEST = REPO / "config-manifest.yaml"
 ENV_PHONE = REPO / ".env.phone"
 
-IGNORE_DIRS = {".git", "venv", ".venv", "backups", "tmp", "artifacts", "__pycache__", "var"}
-IGNORE_FILES = {
+IGNORE_TOP = {".git", "venv", ".venv", "backups", "tmp", "artifacts", "__pycache__"}
+IGNORE_REL_PREFIXES = ("var/backup/", "var/tmp/")
+EXAMPLE_FILES = {
     "config-manifest.yaml",
-    ".env.phone",
+    "scripts/connectors/mail_ingest.env.example",
     ".env.phone.example",
-    "mail_ingest.env.example",
+}
+SAFE_SECRET_PLACEHOLDERS = {
+    "",
+    '""',
+    "''",
+    "secret",
+    '"secret"',
+    "'secret'",
+    "<secret>",
+    '"<secret>"',
+    "'<secret>'",
+    "changeme",
+    '"changeme"',
+    "'changeme'",
 }
 
-SAFE_PLACEHOLDERS = {"secret", "changeme", "example", "<secret>", "xxx", "***", "redacted", "placeholder"}
+def fail(msg: str) -> None:
+    print(msg)
+    sys.exit(1)
 
 def load_yaml(path: Path):
     try:
         return yaml.safe_load(path.read_text(encoding="utf-8"))
     except Exception as e:
-        print(f"FAIL yaml_read {path}: {e}")
-        sys.exit(1)
+        fail(f"FAIL yaml_read {path}: {e}")
 
 def load_env_keys(path: Path):
     keys = set()
@@ -45,35 +60,28 @@ def iter_repo_files(root: Path):
     for p in root.rglob("*"):
         if not p.is_file():
             continue
-        if any(part in IGNORE_DIRS for part in p.parts):
+        rel = str(p.relative_to(root))
+        top = rel.split("/", 1)[0]
+        if top in IGNORE_TOP:
             continue
-        if p.name in IGNORE_FILES:
+        if rel.startswith(IGNORE_REL_PREFIXES):
             continue
-        if p.name.endswith(".example") or p.name.endswith(".env.example"):
-            continue
-        yield p
+        yield p, rel
 
-def normalize_value(v: str) -> str:
-    return v.strip().strip('"').strip("'").strip()
-
-def is_real_secret_value(v: str) -> bool:
-    x = normalize_value(v)
-    if not x:
-        return False
-    if x.lower() in SAFE_PLACEHOLDERS:
-        return False
-    return True
+def strip_inline_comment(value: str) -> str:
+    # Good enough for .env-like lines; preserves quoted placeholders.
+    if " #" in value:
+        value = value.split(" #", 1)[0].rstrip()
+    return value.strip()
 
 def main():
     if not MANIFEST.exists():
-        print("FAIL missing config-manifest.yaml")
-        sys.exit(1)
+        fail("FAIL missing config-manifest.yaml")
 
     data = load_yaml(MANIFEST) or {}
     variables = data.get("variables")
     if not isinstance(variables, dict):
-        print("FAIL manifest.variables is not a mapping")
-        sys.exit(1)
+        fail("FAIL manifest.variables is not a mapping")
 
     env_phone_keys = load_env_keys(ENV_PHONE)
     errors = []
@@ -99,24 +107,46 @@ def main():
         if name not in env_phone_keys:
             errors.append(f"missing_in_.env.phone {name}")
 
-    repo_hits = set()
+    repo_hits = []
 
-    for p in iter_repo_files(REPO):
+    for p, rel in iter_repo_files(REPO):
         try:
-            text = p.read_text(encoding="utf-8")
+            lines = p.read_text(encoding="utf-8").splitlines()
         except Exception:
             continue
 
-        for name in secret_vars:
-            pats = [
-                re.compile(rf'(^|\n)\s*(?:export\s+)?{re.escape(name)}\s*=\s*([^\n#]+)', re.M),
-                re.compile(rf'(^|\n)\s*{re.escape(name)}\s*:\s*([^\n#]+)', re.M),
-            ]
-            for pat in pats:
-                for m in pat.finditer(text):
-                    value = m.group(2)
-                    if is_real_secret_value(value):
-                        repo_hits.add(f"secret_value_like_assignment {name} :: {p.relative_to(REPO)}")
+        for i, raw in enumerate(lines, start=1):
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+
+            for name in secret_vars:
+                # 1) .env-style assignment: IMAP_PASS=...
+                m_env = re.match(rf'^(?:export\s+)?{re.escape(name)}\s*=\s*(.*)$', line)
+                if m_env:
+                    value = strip_inline_comment(m_env.group(1))
+                    if rel in EXAMPLE_FILES:
+                        if value not in SAFE_SECRET_PLACEHOLDERS:
+                            repo_hits.append(f"secret_value_in_example {name} :: {rel}:{i}")
+                    else:
+                        if value and value not in SAFE_SECRET_PLACEHOLDERS:
+                            repo_hits.append(f"secret_assignment_in_repo {name} :: {rel}:{i}")
+                    continue
+
+                # 2) YAML/JSON-like key/value: IMAP_PASS: xxx or "IMAP_PASS": "xxx"
+                m_map = re.match(
+                    rf'^(?:["\']?{re.escape(name)}["\']?)\s*:\s*(.+?)\s*$',
+                    line
+                )
+                if m_map:
+                    value = strip_inline_comment(m_map.group(1).strip().rstrip(","))
+                    if rel in EXAMPLE_FILES:
+                        if value not in SAFE_SECRET_PLACEHOLDERS:
+                            repo_hits.append(f"secret_value_in_example {name} :: {rel}:{i}")
+                    else:
+                        if value and value not in SAFE_SECRET_PLACEHOLDERS:
+                            repo_hits.append(f"secret_mapping_in_repo {name} :: {rel}:{i}")
+                    continue
 
     print("== manifest ==")
     print(f"variables_total={len(variables)}")
@@ -127,7 +157,7 @@ def main():
     print(f".env.phone_keys={len(env_phone_keys)}")
 
     if repo_hits:
-        errors.extend(sorted(repo_hits))
+        errors.extend(repo_hits)
 
     if errors:
         print("== FAIL ==")
