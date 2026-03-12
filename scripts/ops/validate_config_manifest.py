@@ -1,18 +1,22 @@
 #!/usr/bin/env python3
 from pathlib import Path
 import sys
-import re
 import yaml
+import re
 
 REPO = Path(".").resolve()
 MANIFEST = REPO / "config-manifest.yaml"
 ENV_PHONE = REPO / ".env.phone"
+
 IGNORE_DIRS = {".git", "venv", ".venv", "backups", "tmp", "artifacts", "__pycache__", "var"}
-ALLOWED_SECRET_NAME_FILES = {
+IGNORE_FILES = {
     "config-manifest.yaml",
+    ".env.phone",
     ".env.phone.example",
-    "scripts/connectors/mail_ingest.env.example",
+    "mail_ingest.env.example",
 }
+
+SAFE_PLACEHOLDERS = {"secret", "changeme", "example", "<secret>", "xxx", "***", "redacted", "placeholder"}
 
 def load_yaml(path: Path):
     try:
@@ -41,26 +45,22 @@ def iter_repo_files(root: Path):
     for p in root.rglob("*"):
         if not p.is_file():
             continue
-        parts = set(p.parts)
-        if parts & IGNORE_DIRS:
+        if any(part in IGNORE_DIRS for part in p.parts):
+            continue
+        if p.name in IGNORE_FILES:
+            continue
+        if p.name.endswith(".example") or p.name.endswith(".env.example"):
             continue
         yield p
 
-def is_allowed_secret_reference(rel: str) -> bool:
-    if rel in ALLOWED_SECRET_NAME_FILES:
-        return True
-    if rel.endswith(".example"):
-        return True
-    if rel.endswith(".example.env"):
-        return True
-    return False
+def normalize_value(v: str) -> str:
+    return v.strip().strip('"').strip("'").strip()
 
-def looks_like_real_secret_value(value: str) -> bool:
-    v = value.strip().strip('"').strip("'")
-    if v == "":
+def is_real_secret_value(v: str) -> bool:
+    x = normalize_value(v)
+    if not x:
         return False
-    placeholders = {"secret", "changeme", "example", "your_password_here", "***", "<secret>"}
-    if v.lower() in placeholders:
+    if x.lower() in SAFE_PLACEHOLDERS:
         return False
     return True
 
@@ -99,34 +99,24 @@ def main():
         if name not in env_phone_keys:
             errors.append(f"missing_in_.env.phone {name}")
 
-    assignment_patterns = {
-        name: re.compile(rf'(^|\\s)(export\\s+)?{re.escape(name)}\\s*=\\s*(.+)$')
-        for name in secret_vars
-    }
+    repo_hits = set()
 
-    repo_hits = []
     for p in iter_repo_files(REPO):
-        rel = str(p.relative_to(REPO))
         try:
-            lines = p.read_text(encoding="utf-8").splitlines()
+            text = p.read_text(encoding="utf-8")
         except Exception:
             continue
-        for i, raw in enumerate(lines, start=1):
-            line = raw.strip()
-            if not line or line.startswith("#"):
-                continue
-            for name, pat in assignment_patterns.items():
-                m = pat.search(raw)
-                if not m:
-                    continue
-                value = m.group(3).strip()
-                if is_allowed_secret_reference(rel):
-                    continue
-                if looks_like_real_secret_value(value):
-                    repo_hits.append(f"secret_value_in_repo {name} :: {rel}:{i}")
 
-    if repo_hits:
-        errors.extend(repo_hits)
+        for name in secret_vars:
+            pats = [
+                re.compile(rf'(^|\n)\s*(?:export\s+)?{re.escape(name)}\s*=\s*([^\n#]+)', re.M),
+                re.compile(rf'(^|\n)\s*{re.escape(name)}\s*:\s*([^\n#]+)', re.M),
+            ]
+            for pat in pats:
+                for m in pat.finditer(text):
+                    value = m.group(2)
+                    if is_real_secret_value(value):
+                        repo_hits.add(f"secret_value_like_assignment {name} :: {p.relative_to(REPO)}")
 
     print("== manifest ==")
     print(f"variables_total={len(variables)}")
@@ -136,6 +126,9 @@ def main():
     print(f".env.phone_exists={ENV_PHONE.exists()}")
     print(f".env.phone_keys={len(env_phone_keys)}")
 
+    if repo_hits:
+        errors.extend(sorted(repo_hits))
+
     if errors:
         print("== FAIL ==")
         for e in errors:
@@ -143,7 +136,7 @@ def main():
         sys.exit(1)
 
     print("== OK ==")
-    print("config manifest v1 validation passed")
+    print("config manifest v3 validation passed")
 
 if __name__ == "__main__":
     main()
