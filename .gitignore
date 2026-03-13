@@ -40,3 +40,5 @@ venv/
 # local diagnostics / scratch
 diag/
 analyze_excel.py
+
+.tmp/
