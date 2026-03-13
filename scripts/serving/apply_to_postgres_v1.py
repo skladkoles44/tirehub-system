@@ -20,7 +20,11 @@ import os
 import sys
 from pathlib import Path
 # ensure repo root is on sys.path when running as a script
-_REPO_ROOT = str(Path(__file__).resolve().parents[2])
+_BOOTSTRAP_ROOT = next((c for c in (Path(__file__).resolve().parent, *Path(__file__).resolve().parent.parents) if (c / "common" / "paths.py").exists()), None)
+if _BOOTSTRAP_ROOT and str(_BOOTSTRAP_ROOT) not in sys.path:
+    sys.path.insert(0, str(_BOOTSTRAP_ROOT))
+from common.paths import repo_root
+_REPO_ROOT = str(repo_root(start=Path(__file__)))
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 import time

@@ -3,6 +3,13 @@ import imaplib, ssl, os, json, email, re, time, fnmatch, atexit, signal, hashlib
 import yaml
 from email.header import decode_header, make_header
 from pathlib import Path
+import sys
+
+_BOOTSTRAP_ROOT = next((c for c in (Path(__file__).resolve().parent, *Path(__file__).resolve().parent.parents) if (c / "common" / "paths.py").exists()), None)
+if _BOOTSTRAP_ROOT and str(_BOOTSTRAP_ROOT) not in sys.path:
+    sys.path.insert(0, str(_BOOTSTRAP_ROOT))
+
+from common.paths import repo_path
 
 def load_env_file(path: str) -> None:
     p = Path(path)
@@ -294,7 +301,8 @@ def main() -> int:
     _install_owner_signal_handlers()
     print(f"MAIL_INGEST_OWNER_PID={os.getpid()}")
     var_root = Path(need("ETL_VAR_ROOT"))
-    registry_path = Path(os.environ.get("SUPPLIERS_REGISTRY_PATH", "config/suppliers_registry.yaml"))
+    registry_env = os.environ.get("SUPPLIERS_REGISTRY_PATH", "").strip()
+    registry_path = Path(registry_env) if registry_env else repo_path("config", "suppliers_registry.yaml", start=Path(__file__))
     registry = load_suppliers_registry(registry_path)
     bootstrap = os.environ.get("MAIL_INGEST_BOOTSTRAP", "0").strip() == "1"
     force_bootstrap = os.environ.get("MAIL_INGEST_FORCE_BOOTSTRAP", "0").strip() == "1"

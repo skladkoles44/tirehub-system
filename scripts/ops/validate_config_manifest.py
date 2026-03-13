@@ -4,7 +4,13 @@ import sys
 import re
 import yaml
 
-REPO = Path(".").resolve()
+_BOOTSTRAP_ROOT = next((c for c in (Path(__file__).resolve().parent, *Path(__file__).resolve().parent.parents) if (c / "common" / "paths.py").exists()), None)
+if _BOOTSTRAP_ROOT and str(_BOOTSTRAP_ROOT) not in sys.path:
+    sys.path.insert(0, str(_BOOTSTRAP_ROOT))
+
+from common.paths import repo_root
+
+REPO = repo_root(start=Path(__file__))
 MANIFEST = REPO / "config-manifest.yaml"
 ENV_PHONE = REPO / ".env.phone"
 

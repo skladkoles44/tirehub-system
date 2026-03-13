@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
 import argparse, sys, subprocess
+from pathlib import Path
+
+_BOOTSTRAP_ROOT = next((c for c in (Path(__file__).resolve().parent, *Path(__file__).resolve().parent.parents) if (c / "common" / "paths.py").exists()), None)
+if _BOOTSTRAP_ROOT and str(_BOOTSTRAP_ROOT) not in sys.path:
+    sys.path.insert(0, str(_BOOTSTRAP_ROOT))
+
+from common.paths import repo_path
 
 def main():
   ap = argparse.ArgumentParser(description="Generic NDJSON emitter v1 (v0 wrapper)")
@@ -17,7 +24,7 @@ def main():
 
   cmd = [
     sys.executable,
-    "scripts/ingestion/kolobox/emit_kolobox_ndjson_v1_FINAL.py",
+    str(repo_path("scripts", "ingestion", "kolobox", "emit_kolobox_ndjson_v1_FINAL.py", start=Path(__file__))),
     "--input", args.input,
     "--mapping", args.mapping,
     "--effective-at", args.effective_at,

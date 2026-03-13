@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
 import json
 from pathlib import Path
+import sys
+
+_BOOTSTRAP_ROOT = next((c for c in (Path(__file__).resolve().parent, *Path(__file__).resolve().parent.parents) if (c / "common" / "paths.py").exists()), None)
+if _BOOTSTRAP_ROOT and str(_BOOTSTRAP_ROOT) not in sys.path:
+    sys.path.insert(0, str(_BOOTSTRAP_ROOT))
+
+from common.paths import repo_path
 
 def normalize(s: str) -> str:
     s = (s or "").strip().lower()
@@ -62,8 +69,8 @@ def load_yaml_minimal(path: Path) -> dict:
     return data
 
 def main():
-    ev_dir = Path("docs/ingestion/kolobox/evidence")
-    contract_path = Path("docs/contracts/KOLOBOX_XLS_MAPPING_V1.yaml")
+    ev_dir = repo_path("docs", "ingestion", "kolobox", "evidence", start=Path(__file__))
+    contract_path = repo_path("docs", "contracts", "KOLOBOX_XLS_MAPPING_V1.yaml", start=Path(__file__))
     if not ev_dir.exists():
         raise SystemExit(f"NOT_FOUND: {ev_dir}")
     if not contract_path.exists():

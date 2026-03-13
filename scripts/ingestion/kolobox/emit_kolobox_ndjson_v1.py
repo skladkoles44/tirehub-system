@@ -8,6 +8,12 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Tuple, Union
 
+_BOOTSTRAP_ROOT = next((c for c in (Path(__file__).resolve().parent, *Path(__file__).resolve().parent.parents) if (c / "common" / "paths.py").exists()), None)
+if _BOOTSTRAP_ROOT and str(_BOOTSTRAP_ROOT) not in sys.path:
+    sys.path.insert(0, str(_BOOTSTRAP_ROOT))
+
+from common.paths import repo_path
+
 import xlrd
 
 
@@ -207,7 +213,7 @@ def main():
     ap.add_argument("--file", required=True)
     ap.add_argument("--layout", required=True, choices=["shiny", "diski", "truck", "komplektatsii"])
     ap.add_argument("--run-id", required=True)
-    ap.add_argument("--mapping", default="mappings/suppliers/kolobox.yaml")
+    ap.add_argument("--mapping", default=str(repo_path("mappings", "suppliers", "kolobox.yaml", start=Path(__file__))))
     ap.add_argument("--out", default="-")
     ap.add_argument("--stats-out", default="")
     args = ap.parse_args()

@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
-import json, os, re
+import json, re, sys
 from pathlib import Path
+
+_BOOTSTRAP_ROOT = next((c for c in (Path(__file__).resolve().parent, *Path(__file__).resolve().parent.parents) if (c / "common" / "paths.py").exists()), None)
+if _BOOTSTRAP_ROOT and str(_BOOTSTRAP_ROOT) not in sys.path:
+    sys.path.insert(0, str(_BOOTSTRAP_ROOT))
+
+from common.paths import repo_path
+
 import xlrd
 
 def norm_cell(v):
@@ -123,11 +130,10 @@ def build_evidence(xls_path: str, sheet_name="TDSheet"):
     }
 
 def main():
-    repo = Path(os.getcwd())
-    evidence_dir = repo / "docs/ingestion/kolobox/evidence"
+    evidence_dir = repo_path("docs", "ingestion", "kolobox", "evidence", start=Path(__file__))
     evidence_dir.mkdir(parents=True, exist_ok=True)
 
-    inbox = repo / "inputs/inbox/Kolobox"
+    inbox = repo_path("inputs", "inbox", "Kolobox", start=Path(__file__))
     files = sorted(inbox.glob("*.xls"))
     if not files:
         raise SystemExit("NO_XLS_FOUND_UNDER inputs/inbox/Kolobox")
