@@ -11,7 +11,9 @@ set -euo pipefail
 PY="${PY:-${ETL_VENV_ROOT:?ETL_VENV_ROOT not set}/bin/python}"
 
 SUPPLIER="kolobox"
-IN_FILE="${IN_FILE:-${ETL_VAR_ROOT:?ETL_VAR_ROOT not set}/inputs/inbox/Kolobox/Прайс_Колобокс_Шины_2026-02-03 (XLS).xls}"
+INBOX_DIR="${ETL_VAR_ROOT:?ETL_VAR_ROOT not set}/inputs/inbox/Kolobox"
+IN_FILE="${IN_FILE:-$(ls -t "${INBOX_DIR}"/*.xls 2>/dev/null | head -n1 || true)}"
+[ -n "${IN_FILE:-}" ] || { echo "NO_XLS_FOUND_UNDER: ${INBOX_DIR}"; exit 1; }
 MAPPING="${MAPPING:-$REPO_ROOT/mappings/suppliers/kolobox.yaml}"
 EFFECTIVE_AT="${EFFECTIVE_AT:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
 RUN_ID="${RUN_ID:-kolobox_shiny_$(date -u +%Y%m%dT%H%M%SZ)_full}"

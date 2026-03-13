@@ -173,11 +173,11 @@ def validate_good_line(obj: dict, expected: dict):
 
 def main():
   ap = argparse.ArgumentParser("tirehub-ingest v1 (SSOT segmented by run_id)")
-  ap.add_argument("--good", required=True, help="path to out/<run_id>/good.ndjson")
-  ap.add_argument("--stats", required=True, help="path to out/<run_id>/stats.json")
-  ap.add_argument("--verdict", required=True, help="path to out/<run_id>/verdict.json (gate)")
+  ap.add_argument("--good", required=True, help="path to GOOD ndjson file (typically under ETL_VAR_ROOT/out or temp run dir)")
+  ap.add_argument("--stats", required=True, help="path to emitter stats.json for the same run")
+  ap.add_argument("--verdict", required=True, help="path to gate verdict.json for the same run")
   ap.add_argument("--mapping", required=False, help="path to mapping.yaml (optional but recommended)")
-  ap.add_argument("--ssot-root", required=False, default=os.environ.get("SSOT_ROOT"), help="SSOT root dir")
+  ap.add_argument("--ssot-root", required=False, default=os.environ.get("SSOT_ROOT"), help="SSOT root dir (default: env SSOT_ROOT)")
   args = ap.parse_args()
 
   good_path = Path(args.good)
