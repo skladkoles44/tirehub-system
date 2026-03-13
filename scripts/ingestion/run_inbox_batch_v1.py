@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 import argparse, json, os, re, subprocess, sys, time
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
 
@@ -19,6 +18,7 @@ if _BOOTSTRAP_ROOT and str(_BOOTSTRAP_ROOT) not in sys.path:
     sys.path.insert(0, str(_BOOTSTRAP_ROOT))
 
 from common.paths import repo_path
+from scripts.ingestion.adapters import ADAPTERS, Plan
 
 
 def resolve_cli_path(value: str) -> Path:
@@ -74,124 +74,6 @@ def sanitize_tag(s: str) -> str:
     s = re.sub(r"[^0-9A-Za-zА-Яа-я._-]+", "_", s)
     return s
 
-@dataclass
-class Plan:
-    supplier_id: str
-    file: Path
-    emitter: Path
-    layout: str
-    mapping: Path
-    run_id: str
-    out_ndjson: Path
-    out_stats: Path
-    out_log: Path
-
-class SupplierAdapter:
-    supplier_id: str = "UNKNOWN"
-    def can_handle(self, supplier_id: str) -> bool: return False
-    def plan(self, file: Path, run_id: str, out_dir: Path) -> Optional[Plan]: return None
-
-class KoloboxAdapter(SupplierAdapter):
-    supplier_id = "Kolobox"
-    def can_handle(self, supplier_id: str) -> bool:
-        return supplier_id.lower() == "kolobox"
-
-    def _detect_layout(self, file: Path) -> str:
-        name = file.name.lower()
-        if "груз" in name:
-            return "truck"
-        if "диск" in name:
-            return "diski"
-        if "комплект" in name:
-            return "komplektatsii"
-        if "шин" in name:
-            return "shiny"
-        # fallback: shiny (самый частый)
-        return "shiny"
-
-    def _detect_mapping(self, file: Path, layout: str) -> Path:
-        # kolobox mappings we created:
-        # - kolobox_truck_xls_v1.yaml (truck 16 cols)
-        # - kolobox_diski_xls_v1.yaml (diski 17 cols)
-        # - kolobox_komplektatsii_xls_v1.yaml (komplektatsii 18 cols)
-        # - kolobox.yaml (baseline, e.g. shiny 21 cols)
-        mp_dir = repo_path("mappings", "suppliers", start=Path(__file__))
-        if layout == "truck":
-            return mp_dir / "kolobox_truck_xls_v1.yaml"
-        if layout == "diski":
-            return mp_dir / "kolobox_diski_xls_v1.yaml"
-        if layout == "komplektatsii":
-            return mp_dir / "kolobox_komplektatsii_xls_v1.yaml"
-        return mp_dir / "kolobox.yaml"
-
-    def plan(self, file: Path, run_id: str, out_dir: Path) -> Optional[Plan]:
-        emitter = repo_path("scripts", "ingestion", "kolobox", "emit_kolobox_ndjson_v1.py", start=Path(__file__))
-        if not emitter.exists():
-            return None
-        layout = self._detect_layout(file)
-        mapping = self._detect_mapping(file, layout)
-        tag = sanitize_tag(f"kolobox__{file.stem}__{layout}")
-        nd = out_dir / f"{tag}.{run_id}.ndjson"
-        st = out_dir / f"{tag}.{run_id}.stats.json"
-        lg = out_dir / f"{tag}.{run_id}.log"
-        return Plan(
-            supplier_id="kolobox",
-            file=file,
-            emitter=emitter,
-            layout=layout,
-            mapping=mapping,
-            run_id=run_id,
-            out_ndjson=nd,
-            out_stats=st,
-            out_log=lg,
-        )
-
-
-class CentrshinAdapter(SupplierAdapter):
-    supplier_id = "Centrshin"
-    def can_handle(self, supplier_id: str) -> bool:
-        return supplier_id.lower() in ("centrshin","центршин")
-
-    def plan(self, file: Path, run_id: str, out_dir: Path) -> Optional[Plan]:
-        # Centrshin: JSON full dump (stock.json). Each top-level array key = one task.
-        if file.suffix.lower() == ".json":
-            emitter = repo_path("scripts", "ingestion", "centrshin", "emit_centrshin_json_category_v1.py", start=Path(__file__))
-            mapping = repo_path("mappings", "suppliers", "centrshin_json_v1.yaml", start=Path(__file__))
-            if not emitter.exists() or not mapping.exists():
-                return None
-            try:
-                data = json.loads(file.read_text(encoding="utf-8"))
-            except Exception:
-                return None
-            if not isinstance(data, dict):
-                return None
-            cats = [k for k,v in data.items() if isinstance(v, list)]
-            cats.sort(key=lambda x: str(x))
-            plans: List[Plan] = []
-            for cat in cats:
-                layout = f"category:{cat}"
-                tag = sanitize_tag(f"centrshin__{file.stem}__{layout}")
-                nd = out_dir / f"{tag}.{run_id}.ndjson"
-                st = out_dir / f"{tag}.{run_id}.stats.json"
-                lg = out_dir / f"{tag}.{run_id}.log"
-                plans.append(Plan(
-                    supplier_id="centrshin",
-                    file=file,
-                    emitter=emitter,
-                    layout=layout,
-                    mapping=mapping,
-                    run_id=run_id,
-                    out_ndjson=nd,
-                    out_stats=st,
-                    out_log=lg,
-                ))
-            return plans
-
-        # XLSX пока не поддерживаем этим путём
-        return None
-
-
-ADAPTERS: List[SupplierAdapter] = [KoloboxAdapter(), CentrshinAdapter()]
 def detect_supplier(file: Path, inbox_root: Path) -> str:
     # expected structure: inputs/inbox/<SupplierName>/<file>
     try:
@@ -326,32 +208,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-### SUPPLIER_HANDLERS
-
-def _add_centrshin_tasks(tasks, supplier_guess: str, file_path: str, run_id: str, out_dir: str):
-    # centrshin_stock*.xlsx contains multiple sheets; we emit at least Шины and Диски
-    if supplier_guess != "centrshin":
-        return False
-    if not file_path.lower().endswith(".xlsx"):
-        return False
-    # emit shiny
-    tasks.append({
-        "supplier_id": "centrshin",
-        "file": file_path,
-        "layout": "shiny",
-        "mapping": _repo_str("mappings", "suppliers", "centrshin_shiny_xlsx_v1.yaml"),
-        "emitter": _repo_str("scripts", "ingestion", "centrshin", "emit_centrshin_xlsx_shiny_v1.py"),
-        "args_extra": ["--sheet", "Шины"],
-    })
-    # emit diski
-    tasks.append({
-        "supplier_id": "centrshin",
-        "file": file_path,
-        "layout": "diski",
-        "mapping": _repo_str("mappings", "suppliers", "centrshin_diski_xlsx_v1.yaml"),
-        "emitter": _repo_str("scripts", "ingestion", "centrshin", "emit_centrshin_xlsx_diski_v1.py"),
-        "args_extra": ["--sheet", "Диски"],
-    })
-    return True
-
-
