@@ -101,9 +101,20 @@ PY
     continue
   fi
 
+  "$PY" "$REPO_ROOT/scripts/enrichment/brinex_parsed_enricher_v1.py" \
+    < "$OUT/good.ndjson" \
+    > "$OUT/good_enriched.ndjson"
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "FAIL enrich rc=$rc sheet=$sheet"
+    fail_count=$((fail_count+1))
+    echo
+    continue
+  fi
+
   "$PY" "$REPO_ROOT/scripts/ingestion/tirehub_ingest_v1.py" \
     --ssot-root "$SSOT" \
-    --good "$OUT/good.ndjson" \
+    --good "$OUT/good_enriched.ndjson" \
     --stats "$OUT/stats.json" \
     --verdict "$OUT/verdict.json"
   rc=$?
