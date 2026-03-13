@@ -1,153 +1,280 @@
 version: 1
-
 variables:
-
-  BRINEX_XLSX_PATH:
-    description: "Path to Brinex XLSX file"
+  BRINEX_RUN_ROOT:
+    description: Run root for Brinex batch ingestion outputs
     level: job
     scope: brinex_job
     required: false
     secret: false
     derived: false
-    example: "/path/to/file.xlsx"
-    introduced_in: "brinex"
-
+    example: /data/data/com.termux/files/home/var/tirehub-system/tmp/brinex_xlsx_all_sheets_v3
+    introduced_in: brinex
+  BRINEX_XLSX_PATH:
+    description: Path to Brinex XLSX file
+    level: job
+    scope: brinex_job
+    required: false
+    secret: false
+    derived: false
+    example: /path/to/file.xlsx
+    introduced_in: brinex
   CURATED_ROOT:
-    description: "Curated data (ETL_DATA_ROOT/curated)"
+    description: Curated data (ETL_DATA_ROOT/curated)
     level: platform
     scope: core_paths
     required: true
     secret: false
     derived: true
-    example: "derived from ETL_DATA_ROOT"
-    introduced_in: "cleanup-wave"
-
+    example: derived from ETL_DATA_ROOT
+    introduced_in: cleanup-wave
   DB_HOST:
-    description: "Database host"
+    description: Database host
     level: runtime
     scope: db
     required: false
     secret: false
     derived: false
-    example: "localhost"
-    introduced_in: "smoke"
-
+    example: localhost
+    introduced_in: smoke
   DB_NAME:
-    description: "Database name"
+    description: Database name
     level: runtime
     scope: db
     required: false
     secret: false
     derived: false
-    example: "tirehub"
-    introduced_in: "smoke"
-
-  DB_PASS:
-    description: "Database password"
+    example: tirehub
+    introduced_in: smoke
+  DB_URL:
+    description: PostgreSQL connection URL
     level: runtime
     scope: db
     required: false
     secret: true
     derived: false
-    example: "secret"
-    introduced_in: "smoke"
-
+    example: secret
+    introduced_in: serving
   ETL_DATA_ROOT:
-    description: "Root directory for persistent data (SSOT, curated)"
+    description: Root directory for persistent data (SSOT, curated)
     level: platform
     scope: core_paths
     required: true
     secret: false
     derived: false
-    example: "/storage/emulated/0/Download/ETL/data"
-    introduced_in: "cleanup-wave"
-
+    example: /storage/emulated/0/Download/ETL/data
+    introduced_in: cleanup-wave
+  ETL_DROP_ROOT:
+    description: Root directory for inbound dropped supplier files
+    level: platform
+    scope: core_paths
+    required: true
+    secret: false
+    derived: false
+    example: /data/data/com.termux/files/home/drop/tirehub-system
+    introduced_in: cleanup-wave
   ETL_REPO_ROOT:
-    description: "Root directory of the repository"
+    description: Root directory of the repository
     level: platform
     scope: core_paths
     required: true
     secret: false
     derived: false
-    example: "/data/data/com.termux/files/home/tirehub-system"
-    introduced_in: "cleanup-wave"
-
+    example: /data/data/com.termux/files/home/tirehub-system
+    introduced_in: cleanup-wave
   ETL_VAR_ROOT:
-    description: "Root directory for runtime data (locks, state, logs, secrets)"
+    description: Root directory for runtime data (locks, state, logs, secrets)
     level: platform
     scope: core_paths
     required: true
     secret: false
     derived: false
-    example: "/data/data/com.termux/files/home/var/tirehub-system"
-    introduced_in: "cleanup-wave"
-
+    example: /data/data/com.termux/files/home/var/tirehub-system
+    introduced_in: cleanup-wave
+  ETL_VENV_ROOT:
+    description: Root directory for project virtual environments
+    level: platform
+    scope: core_paths
+    required: true
+    secret: false
+    derived: false
+    example: /data/data/com.termux/files/home/venvs/tirehub-system
+    introduced_in: cleanup-wave
   IMAP_HOST:
-    description: "IMAP server hostname"
+    description: IMAP server hostname
     level: runtime
     scope: mail_ingest
     required: true
     secret: false
     derived: false
-    example: "imap.yandex.ru"
-    introduced_in: "mail_ingest"
-
-  IMAP_PASS:
-    description: "IMAP password"
-    level: runtime
-    scope: mail_ingest
-    required: true
-    secret: true
-    derived: false
-    example: "secret"
-    introduced_in: "mail_ingest"
-
-  MAIL_INGEST_DOWNLOAD:
-    description: "Enable actual download (vs dry-run)"
+    example: imap.yandex.ru
+    introduced_in: mail_ingest
+  IMAP_MAILBOX:
+    description: IMAP mailbox to scan
     level: runtime
     scope: mail_ingest
     required: false
     secret: false
     derived: false
-    default: "0"
-    example: "1"
-    introduced_in: "mail_ingest"
-
-  MAIL_INGEST_UNKNOWN_POLICY:
-    description: "What to do with unknown suppliers"
+    default: INBOX
+    example: INBOX
+    introduced_in: mail_ingest
+  IMAP_PASS:
+    description: IMAP password
+    level: runtime
+    scope: mail_ingest
+    required: true
+    secret: true
+    derived: false
+    example: secret
+    introduced_in: mail_ingest
+  IMAP_PORT:
+    description: IMAP server port
+    level: runtime
+    scope: mail_ingest
+    required: false
+    secret: false
+    derived: false
+    default: '993'
+    example: '993'
+    introduced_in: mail_ingest
+  IMAP_USER:
+    description: IMAP username
     level: runtime
     scope: mail_ingest
     required: true
     secret: false
     derived: false
-    default: "hold"
-    example: "hold"
-    introduced_in: "mail_ingest"
-
+    example: etl@example.com
+    introduced_in: mail_ingest
+  MAIL_INGEST_BOOTSTRAP:
+    description: Enable bootstrap mode for mail ingest
+    level: runtime
+    scope: mail_ingest
+    required: false
+    secret: false
+    derived: false
+    default: '0'
+    example: '1'
+    introduced_in: mail_ingest
+  MAIL_INGEST_DOWNLOAD:
+    description: Enable actual download (vs dry-run)
+    level: runtime
+    scope: mail_ingest
+    required: false
+    secret: false
+    derived: false
+    default: '0'
+    example: '1'
+    introduced_in: mail_ingest
+  MAIL_INGEST_DRYRUN_MAX:
+    description: Max messages to inspect during dry-run
+    level: runtime
+    scope: mail_ingest
+    required: false
+    secret: false
+    derived: false
+    default: '10'
+    example: '10'
+    introduced_in: mail_ingest
+  MAIL_INGEST_ENV_FILE:
+    description: Path to mail ingest env file
+    level: runtime
+    scope: mail_ingest
+    required: false
+    secret: false
+    derived: false
+    example: /home/Test_etl/var/tirehub-system/run/mail_ingest.env
+    introduced_in: mail_ingest
+  MAIL_INGEST_FORCE_BOOTSTRAP:
+    description: Force bootstrap even if state exists
+    level: runtime
+    scope: mail_ingest
+    required: false
+    secret: false
+    derived: false
+    default: '0'
+    example: '1'
+    introduced_in: mail_ingest
+  MAIL_INGEST_OWNER_LOCK:
+    description: Path to single-owner lock file
+    level: runtime
+    scope: mail_ingest
+    required: false
+    secret: false
+    derived: false
+    example: /home/Test_etl/var/tirehub-system/run/mail_ingest_owner.lock
+    introduced_in: mail_ingest
+  MAIL_INGEST_STATE:
+    description: Path to mail ingest state file
+    level: runtime
+    scope: mail_ingest
+    required: true
+    secret: false
+    derived: false
+    example: /home/Test_etl/var/tirehub-system/run/mail_ingest_state.json
+    introduced_in: mail_ingest
+  MAIL_INGEST_UNKNOWN_POLICY:
+    description: What to do with unknown suppliers
+    level: runtime
+    scope: mail_ingest
+    required: true
+    secret: false
+    derived: false
+    default: hold
+    example: hold
+    introduced_in: mail_ingest
+  PYTHON_BIN:
+    description: Python interpreter path for shell runners
+    level: runtime
+    scope: runtime_tools
+    required: false
+    secret: false
+    derived: false
+    example: /usr/bin/python3
+    introduced_in: runtime
   SSOT_ROOT:
-    description: "Single source of truth data (ETL_DATA_ROOT/ssot)"
+    description: Single source of truth data (ETL_DATA_ROOT/ssot)
     level: platform
     scope: core_paths
     required: true
     secret: false
     derived: true
-    example: "derived from ETL_DATA_ROOT"
-    introduced_in: "cleanup-wave"
-
+    example: derived from ETL_DATA_ROOT
+    introduced_in: cleanup-wave
+  SSOT_SMOKE_LOG_DIR:
+    description: Log directory for SSOT smoke runs
+    level: runtime
+    scope: smoke
+    required: false
+    secret: false
+    derived: false
+    example: /data/data/com.termux/files/home/var/tirehub-system/logs/smoke
+    introduced_in: smoke
+  SUPPLIERS_REGISTRY_PATH:
+    description: Path to suppliers registry yaml
+    level: runtime
+    scope: mail_ingest
+    required: false
+    secret: false
+    derived: false
+    example: /data/data/com.termux/files/home/tirehub-system/config/suppliers_registry.yaml
+    introduced_in: mail_ingest
 scopes:
-
   brinex_job:
-    description: "Brinex supplier ingestion job"
-    owner: "ingestion-team"
-
+    description: Brinex supplier ingestion job
+    owner: ingestion-team
   core_paths:
-    description: "Core platform paths"
-    owner: "platform-team"
-
+    description: Core platform paths
+    owner: platform-team
   db:
-    description: "Database connection"
-    owner: "platform-team"
-
+    description: Database connection
+    owner: platform-team
   mail_ingest:
-    description: "Mail ingestion connector"
-    owner: "ingestion-team"
+    description: Mail ingestion connector
+    owner: ingestion-team
+  runtime_tools:
+    description: Shared runtime toolchain variables
+    owner: platform-team
+  smoke:
+    description: Smoke and verification runs
+    owner: platform-team

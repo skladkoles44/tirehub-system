@@ -80,6 +80,16 @@ def strip_inline_comment(value: str) -> str:
         value = value.split(" #", 1)[0].rstrip()
     return value.strip()
 
+def is_runtime_passthrough(value: str) -> bool:
+    v = (value or "").strip()
+    if not v:
+        return True
+    passthrough_patterns = (
+        r'^["\']?\$\{[A-Z][A-Z0-9_]*(:-[^}]*)?\}["\']?$',
+        r'^["\']?\$[A-Z][A-Z0-9_]*["\']?$',
+    )
+    return any(re.match(p, v) for p in passthrough_patterns)
+
 def main():
     if not MANIFEST.exists():
         fail("FAIL missing config-manifest.yaml")
@@ -135,7 +145,7 @@ def main():
                         if value not in SAFE_SECRET_PLACEHOLDERS:
                             repo_hits.append(f"secret_value_in_example {name} :: {rel}:{i}")
                     else:
-                        if value and value not in SAFE_SECRET_PLACEHOLDERS:
+                        if value and value not in SAFE_SECRET_PLACEHOLDERS and not is_runtime_passthrough(value):
                             repo_hits.append(f"secret_assignment_in_repo {name} :: {rel}:{i}")
                     continue
 
@@ -150,7 +160,7 @@ def main():
                         if value not in SAFE_SECRET_PLACEHOLDERS:
                             repo_hits.append(f"secret_value_in_example {name} :: {rel}:{i}")
                     else:
-                        if value and value not in SAFE_SECRET_PLACEHOLDERS:
+                        if value and value not in SAFE_SECRET_PLACEHOLDERS and not is_runtime_passthrough(value):
                             repo_hits.append(f"secret_mapping_in_repo {name} :: {rel}:{i}")
                     continue
 
