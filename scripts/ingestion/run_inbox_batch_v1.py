@@ -28,6 +28,16 @@ def resolve_cli_path(value: str) -> Path:
     return repo_path(*p.parts, start=Path(__file__))
 
 
+def resolve_var_path(value: str, env_name: str = "ETL_VAR_ROOT") -> Path:
+    p = Path(value)
+    if p.is_absolute():
+        return p
+    base = os.environ.get(env_name, "").strip()
+    if not base:
+        raise SystemExit(f"ENV_MISSING: {env_name} required for relative runtime path: {value}")
+    return Path(base).joinpath(*p.parts)
+
+
 def _repo_str(*parts: str) -> str:
     return str(repo_path(*parts, start=Path(__file__)))
 
@@ -119,8 +129,8 @@ def run_plan(pl: Plan) -> Dict[str, Any]:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--root", default="inputs/inbox", help="inbox root dir (default: inputs/inbox)")
-    ap.add_argument("--out", default="out/batch", help="output root (default: out/batch)")
+    ap.add_argument("--root", default="inputs/inbox", help="inbox root dir under ETL_VAR_ROOT (default: inputs/inbox)")
+    ap.add_argument("--out", default="out/batch", help="output root under ETL_VAR_ROOT (default: out/batch)")
     ap.add_argument("--run-id", default="", help="override run_id (default: now)")
     ap.add_argument("--known-only", action="store_true", help="skip unknown suppliers instead of marking as unsupported")
     ap.add_argument("--only-supplier", default="", help="process only this supplier_id (normalized, e.g. centrshin)")
@@ -128,8 +138,8 @@ def main() -> int:
 
     only_supplier = (args.only_supplier or "").strip().lower()
 
-    inbox_root = resolve_cli_path(args.root)
-    out_root = resolve_cli_path(args.out)
+    inbox_root = resolve_var_path(args.root)
+    out_root = resolve_var_path(args.out)
 
     files: List[Path] = []
     if inbox_root.exists():

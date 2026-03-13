@@ -8,7 +8,17 @@ if _BOOTSTRAP_ROOT and str(_BOOTSTRAP_ROOT) not in sys.path:
 
 from common.paths import repo_path
 
+import os
 import xlrd
+
+def resolve_var_path(value: str, env_name: str = "ETL_VAR_ROOT") -> Path:
+    p = Path(value)
+    if p.is_absolute():
+        return p
+    base = os.environ.get(env_name, "").strip()
+    if not base:
+        raise SystemExit(f"ENV_MISSING: {env_name} required for relative runtime path: {value}")
+    return Path(base).joinpath(*p.parts)
 
 def norm_cell(v):
     if v is None:
@@ -133,10 +143,10 @@ def main():
     evidence_dir = repo_path("docs", "ingestion", "kolobox", "evidence", start=Path(__file__))
     evidence_dir.mkdir(parents=True, exist_ok=True)
 
-    inbox = repo_path("inputs", "inbox", "Kolobox", start=Path(__file__))
+    inbox = resolve_var_path("inputs/inbox/Kolobox")
     files = sorted(inbox.glob("*.xls"))
     if not files:
-        raise SystemExit("NO_XLS_FOUND_UNDER inputs/inbox/Kolobox")
+        raise SystemExit("NO_XLS_FOUND_UNDER ETL_VAR_ROOT/inputs/inbox/Kolobox")
 
     for p in files:
         ev = build_evidence(str(p), sheet_name="TDSheet")
