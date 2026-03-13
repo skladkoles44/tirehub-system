@@ -62,6 +62,7 @@ fi
 
 echo "=== 3) Ingestion (SSOT) ==="
 "$PY" "$REPO_ROOT/scripts/ingestion/tirehub_ingest_v1.py" \
+  --ssot-root "${SSOT_ROOT:?SSOT_ROOT not set}" \
   --good "$GOOD_NDJSON" \
   --stats "$STATS_JSON" \
   --verdict "$VERDICT_JSON" \

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import argparse, json, sys, hashlib
+import argparse, json, sys, hashlib, os
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -57,11 +57,12 @@ def drop_reason(price, qty)->str:
 def main():
   ap=argparse.ArgumentParser("tirehub-curated v1.1")
   ap.add_argument("--manifest",required=True,help="path to SSOT manifest json")
-  ap.add_argument("--out-dir",required=False,default="curated_v1/out",help="base output dir")
+  ap.add_argument("--out-dir",required=False,default=os.environ.get("CURATED_ROOT",""),help="base output dir (default: CURATED_ROOT)")
   ap.add_argument("--max-dropped-samples",type=int,default=50,help="cap for dropped_samples.ndjson (0 disables)")
   args=ap.parse_args()
 
   manifest_path=Path(args.manifest)
+  if not (args.out_dir or "").strip(): die("CURATED_ROOT missing: pass --out-dir or export CURATED_ROOT")
   if not manifest_path.exists(): die(f"manifest not found: {manifest_path}")
 
   manifest=load_json(manifest_path)
