@@ -267,7 +267,24 @@ def land_attachment_bytes(var_root: Path, filename: str, payload: bytes, payload
     os.replace(tmp, target)
     return target
 
+def find_existing_routed_by_sha(var_root: Path, payload_sha256: str):
+    inbox_root = var_root / "inputs" / "inbox"
+    if not inbox_root.exists():
+        return None
+    for cand in inbox_root.rglob("*"):
+        if not cand.is_file():
+            continue
+        try:
+            if sha256_file(cand) == payload_sha256:
+                return cand
+        except Exception:
+            continue
+    return None
+
 def route_landed_attachment(var_root: Path, supplier_dir: str, landing_path: Path, filename: str, uid_i: int, payload_sha256: str):
+    existing_any = find_existing_routed_by_sha(var_root, payload_sha256)
+    if existing_any is not None:
+        return ("known_content_reobserved", existing_any, payload_sha256)
     target_dir = var_root / "inputs" / "inbox" / supplier_dir
     target_dir.mkdir(parents=True, exist_ok=True)
     target = target_dir / filename
@@ -507,6 +524,23 @@ def main() -> int:
                                 "inputs_path": str(saved_path),
                                 "status": "duplicate",
                                 "reason": "duplicate_same_content",
+                            })
+                            attachment_outcomes.append("duplicate")
+                            saved_any = True
+                        elif save_status == "known_content_reobserved":
+                            print(f"ATTACHMENT_{att_count}_OUTCOME=KNOWN_CONTENT_REOBSERVED")
+                            print(f"ATTACHMENT_{att_count}_EXISTS_AT={saved_path}")
+                            append_routing_event(var_root, {
+                                "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                                "evidence_id": evidence_id,
+                                "dataset_key": payload_sha256[:12],
+                                "landing_file": landing_path.name,
+                                "sha256_full": payload_sha256,
+                                "original_name": safe_name,
+                                "supplier_candidate": supplier_dir,
+                                "inputs_path": str(saved_path),
+                                "status": "duplicate",
+                                "reason": "known_content_reobserved",
                             })
                             attachment_outcomes.append("duplicate")
                             saved_any = True
