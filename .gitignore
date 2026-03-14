@@ -42,3 +42,8 @@ diag/
 analyze_excel.py
 
 .tmp/
+
+# runtime artifacts
+artifacts/
+curated_v1/
+offers_v1/
