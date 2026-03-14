@@ -24,7 +24,7 @@ def main():
 
   cmd = [
     sys.executable,
-    str(repo_path("scripts", "ingestion", "kolobox", "emit_kolobox_ndjson_v1_FINAL.py", start=Path(__file__))),
+    str(repo_path("scripts", "ingestion", "kolobox", "emit_kolobox_ndjson_v1.py", start=Path(__file__))),
     "--input", args.input,
     "--mapping", args.mapping,
     "--effective-at", args.effective_at,
