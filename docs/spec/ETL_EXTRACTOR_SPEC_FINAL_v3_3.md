@@ -1,3 +1,6 @@
+Status: legacy architecture
+Not used in production ingestion pipeline
+
 Спецификация: ETL-экстрактор прайс-листов (v3.3 FINAL)
 
 ---

@@ -2,7 +2,7 @@
 
 ## Goal
 Зафиксировать границу ответственности между:
-- артефактами Extractor v3.3 (NDJSON),
+- артефактами Parser framework GOOD NDJSON,
 - хранилищем/версионированием (SQLite snapshots),
 - downstream доступом (VIEW-only).
 
