@@ -21,6 +21,7 @@ from scripts.etl.row_stream import row_iterator
 from scripts.etl.events import emit_event
 from scripts.etl.emitters import good_emitter, reject_emitter
 import json
+import os
 
 logger=logging.getLogger(__name__)
 
@@ -29,8 +30,11 @@ class RunnerV41:
         self.layout_registry=layout_registry
         self.last_fingerprint=None
 
-    def run(self,input_file:Path,cache_dir:Path=Path("cache/artifacts")):
+    def run(self,input_file:Path,cache_dir:Path|None=None,output_dir:Path|None=None):
         try:
+            var_root=Path(os.environ["ETL_VAR_ROOT"])
+            cache_dir=cache_dir or (var_root/"cache"/"artifacts_runner_v4_1")
+            output_dir=output_dir or (var_root/"artifacts"/input_file.stem)
             file_hash=file_sha256(input_file)
             prev_manifest=get_previous_manifest(cache_dir,file_hash)
             if prev_manifest:
@@ -45,7 +49,6 @@ class RunnerV41:
             fingerprints=set()
             sheets_processed=0
             tables_processed=0
-            output_dir=Path("artifact")/input_file.stem
             output_dir.mkdir(parents=True, exist_ok=True)
             atomic_path=output_dir/"atomic_rows.ndjson"
             if atomic_path.exists():
@@ -76,9 +79,7 @@ class RunnerV41:
                     profile_rows,stream_rows=itertools.tee(row_iter)
                     profiles=profile_columns(profile_rows, columns, sample_size=50)
                     try:
-                        _pdir=Path("artifact")/input_file.stem
-                        _pdir.mkdir(parents=True, exist_ok=True)
-                        _pp=_pdir/"column_profiles.ndjson"
+                        _pp=output_dir/"column_profiles.ndjson"
                         with _pp.open("a", encoding="utf-8") as _pf:
                             _pf.write(json.dumps({
                                 "sheet": sheet_name,
@@ -139,22 +140,20 @@ class RunnerV41:
             emit_event("RunnerError",{"file":str(input_file),"error":str(e)})
             raise
 if __name__ == "__main__":
-    import sys
-    from pathlib import Path
+    import argparse
+    import json
 
-    if len(sys.argv) < 3:
-        print("USAGE: runner_v4_1.py <input_file> <out_dir>")
-        sys.exit(1)
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--file", required=True)
+    ap.add_argument("--out-dir", default="")
+    ap.add_argument("--cache-dir", default="")
+    args = ap.parse_args()
 
-    input_file = Path(sys.argv[1])
-    out_dir = Path(sys.argv[2])
+    input_file = Path(args.file).resolve()
+    out_dir = Path(args.out_dir).resolve() if args.out_dir else None
+    cache_dir = Path(args.cache_dir).resolve() if args.cache_dir else None
 
-    # removed registry
-    # registry removed
     runner = RunnerV41(None)
-    manifest = runner.run(input_file)
+    manifest = runner.run(input_file, cache_dir=cache_dir, output_dir=out_dir)
 
-    print("RUN_OK")
-    print("INPUT=", input_file)
-    print("OUTPUT=", out_dir)
-    print("ROWS=", manifest["stats"]["rows_emitted"])
+    print(json.dumps(manifest, ensure_ascii=False, indent=2))
