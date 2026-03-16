@@ -101,6 +101,8 @@ class RunnerV41:
                                 "role": col.get("role"),
                                 "value": value,
                             })
+                        while atomic_cols and (atomic_cols[-1].get("header") in ("", None)) and atomic_cols[-1].get("value") is None:
+                            atomic_cols.pop()
                         rec = {
                             "source_file": str(input_file),
                             "sheet_name": sheet_name,
@@ -136,3 +138,23 @@ class RunnerV41:
             logger.exception(f"Runner failed on {input_file}")
             emit_event("RunnerError",{"file":str(input_file),"error":str(e)})
             raise
+if __name__ == "__main__":
+    import sys
+    from pathlib import Path
+
+    if len(sys.argv) < 3:
+        print("USAGE: runner_v4_1.py <input_file> <out_dir>")
+        sys.exit(1)
+
+    input_file = Path(sys.argv[1])
+    out_dir = Path(sys.argv[2])
+
+    # removed registry
+    # registry removed
+    runner = RunnerV41(None)
+    manifest = runner.run(input_file)
+
+    print("RUN_OK")
+    print("INPUT=", input_file)
+    print("OUTPUT=", out_dir)
+    print("ROWS=", manifest["stats"]["rows_emitted"])
