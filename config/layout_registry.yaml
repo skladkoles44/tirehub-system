@@ -1,0 +1,5 @@
+layouts:
+  "2520c2e7a4":
+    mapping: config/mappings/test_map_v1.yaml
+  "393fb250b3":
+    mapping: config/mappings/test_map_v1.yaml

@@ -10,8 +10,8 @@ def file_sha256(path: Path):
             h.update(chunk)
     return f"sha256:{h.hexdigest()}"
 
-def build_manifest(source_file: Path, fingerprint: str, mapping_id: str, stats: dict):
-    return {
+def build_manifest(source_file: Path, fingerprint: str, mapping_id: str, stats: dict, fingerprints=None, processing=None):
+    manifest = {
         "runner": {
             "version": "4.1"
         },
@@ -23,10 +23,14 @@ def build_manifest(source_file: Path, fingerprint: str, mapping_id: str, stats: 
         },
         "layout": {
             "fingerprint": fingerprint,
+            "fingerprints": sorted(fingerprints) if fingerprints else [fingerprint],
             "mapping_id": mapping_id
         },
         "stats": stats
     }
+    if processing is not None:
+        manifest["processing"] = processing
+    return manifest
 
 def write_manifest(output_dir: Path, manifest: dict):
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -34,4 +38,4 @@ def write_manifest(output_dir: Path, manifest: dict):
     final = output_dir / "manifest.json"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2, ensure_ascii=False)
-    tmp.rename(final)
+    tmp.replace(final)

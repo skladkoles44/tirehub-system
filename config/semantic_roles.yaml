@@ -1,0 +1,181 @@
+sku:
+- sku
+- article
+- артикул
+- код товара
+- product code
+- vendor code
+- part number
+- код производителя
+- goods_id
+- product_id
+- Номер
+category:
+- category
+- вид товара
+- категория
+- Подвид товара
+- Группа
+name:
+- name
+- product
+- product name
+- item
+- наименование
+- номенклатура
+- товар
+country:
+- Страна
+- Страна производитель
+brand:
+- brand
+- vendor
+- maker
+- manufacturer
+- бренд
+- производитель
+- марка
+model:
+- model
+- модель
+application:
+- application
+- usage
+- vehicle type
+- вид техники
+- ось применения
+- применяемость
+- По типу транспортного средства
+stock:
+- stock
+- qty
+- quantity
+- available
+- остаток
+- остатки
+- наличие
+- в наличии
+price:
+- price
+- cost
+- цена
+- стоимость
+- розница
+- розничная
+- оптовая
+- опт
+- rub
+- руб
+- b2b
+- Розничные
+warehouse:
+- warehouse
+- location
+- склад
+image:
+- image
+- photo
+- url
+- изображение
+- картинка
+- фото
+size:
+- size
+- dimension
+- diameter
+- width
+- height
+- размер
+- диаметр
+- ширина
+- высота
+- длина
+- типоразмер
+load_index:
+- load index
+- индекс нагрузки
+speed_index:
+- speed index
+- индекс скорости
+season:
+- season
+- сезон
+- сезонность
+year:
+- year
+- год
+capacity:
+- capacity
+- емкость
+voltage:
+- voltage
+- напряжение
+- напряжение v
+current:
+- current
+- starting current
+- пусковой ток
+polarity:
+- polarity
+- полярность
+ply_rating:
+- ply rating
+- слойность
+bolt_count:
+- bolt count
+- количество отверстий
+- количество отверстий крепежа
+bolt_pattern:
+- bolt pattern
+- pcd
+color:
+- color
+- цвет
+- описание цвета
+offset:
+- offset
+- вылет
+- ет
+- et
+center_bore:
+- center bore
+- центральное отверстие
+- св
+- dia
+terminal_type:
+- terminal type
+- тип клемм
+fastener_type:
+- fastener type
+- тип крепежа
+wheel_type:
+- wheel type
+- тип
+material:
+- material
+- материал
+configuration:
+- configuration
+- исполнение
+weight:
+- weight
+- вес
+thread:
+- thread
+- резьба
+seat_type:
+- seat type
+- тип отверстия
+- юбка
+runflat:
+- run flat
+- runflat
+studded:
+- studded
+- шипы
+viscosity:
+- viscosity
+- вязкость
+warranty:
+- warranty
+- гарантийный срок

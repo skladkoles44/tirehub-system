@@ -1,0 +1,4 @@
+mapping_id: test_map_v1
+columns:
+  - role: data
+  - role: data
