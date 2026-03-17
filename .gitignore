@@ -47,3 +47,13 @@ analyze_excel.py
 artifacts/
 curated_v1/
 offers_v1/
+.pydeps/
+var/
+artifact/
+cache/
+*.log
+*.tmp
+
+# python cache
+__pycache__/
+*.pyc
