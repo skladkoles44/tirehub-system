@@ -76,8 +76,8 @@ class RunnerV41:
                     self.last_fingerprint=fingerprint
                     columns_local=columns
                     row_iter=row_iterator(table)
-                    profile_rows,stream_rows=itertools.tee(row_iter)
-                    profiles=profile_columns(profile_rows, columns, sample_size=50)
+                    profile_buffer=list(itertools.islice(row_iter, 50))
+                    profiles=profile_columns(iter(profile_buffer), columns, sample_size=50)
                     try:
                         _pp=output_dir/"column_profiles.ndjson"
                         with _pp.open("a", encoding="utf-8") as _pf:
@@ -89,7 +89,7 @@ class RunnerV41:
                             }, ensure_ascii=False) + "\n")
                     except Exception as _e:
                         logger.warning(f"ProfileWriteFail:{_e}")
-                    for row_idx,row in enumerate(stream_rows):
+                    for row_idx,row in enumerate(itertools.chain(profile_buffer, row_iter)):
                         rows_total+=1
                         rows_emitted+=1
                         atomic_cols=[]
