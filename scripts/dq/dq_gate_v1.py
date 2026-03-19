@@ -93,7 +93,11 @@ def dq_gate(artifact_dir: Path):
     if not good_path.exists():
         raise SystemExit(f"GOOD_NOT_FOUND: {good_path}")
     if not normalizer_manifest_path.exists():
-        raise SystemExit(f"NORMALIZER_MANIFEST_NOT_FOUND: {normalizer_manifest_path}")
+        fallback_manifest_path = artifact_dir / "manifest.json"
+        if fallback_manifest_path.exists():
+            normalizer_manifest_path = fallback_manifest_path
+        else:
+            raise SystemExit(f"NORMALIZER_MANIFEST_NOT_FOUND: {normalizer_manifest_path}")
 
     normalizer_manifest = json.loads(normalizer_manifest_path.read_text(encoding="utf-8"))
     normalizer_stats = normalizer_manifest.get("stats") or {}
