@@ -1,56 +1,91 @@
-# tirehub-system. этап ingestion
+# tirehub-system
 
-ETL-компонент для обработки и нормализации входных файлов.
+Система ingestion, normalization и current-state обновления для поставщиков автотоваров.
 
-Компонент преобразует исходные данные различных форматов из разных файлов в структурированный слой (SSOT), предназначенный для дальнейшего использования прикладными сервисами.
+Репозиторий описывает и реализует путь от входящего payload к двум разным текущим состояниям:
 
-Текущий фокус — корректная экстракция, техническая валидация и стабильная запись фактов.
+- supplier reality
+- marketplace reality
 
-## Architecture (ingestion stage)
+Главный принцип: один и тот же вход при одинаковых pinned версиях должен приводить к воспроизводимому результату.
 
-Extractor → Emitter → Gate → Ingestion → SSOT
+## System model
+
+Raw Intake Layer -> Normalized Supplier Offers Current -> Marketplace Current
+
+### Raw Intake Layer
+Хранит факт получения и оригинальный payload.
+Не содержит бизнес-нормализации.
+Является неизменяемым слоем факта получения.
+
+### Normalized Supplier Offers Current
+Хранит текущее каноническое состояние предложений поставщика.
+Является результатом normalize stage.
+Отражает supplier reality, а не витринную модель.
+
+### Marketplace Current
+Формируется только после matching и publish policy.
+Содержит только публикабельные офферы.
+Не пополняется напрямую из raw intake.
+
+## Contracts
+
+Основной reference-layer для архитектуры и data contracts находится в:
+
+- specs/contracts/README.md
+
+Ключевые документы:
+
+- specs/contracts/01_architecture_layers.md
+- specs/contracts/02_lifecycle.md
+- specs/contracts/03_canonical_supplier_offer.md
+- specs/contracts/06_quality_gates.md
+- specs/contracts/07_current_state_model.md
+- specs/contracts/08_supplier_vs_marketplace.md
+- specs/contracts/10_schema_drift_handling.md
+- specs/contracts/11_versioning.md
+- specs/contracts/16_data_contracts.md
+
+## Lifecycle
+
+1. Приём данных из источника
+2. Сохранение raw payload
+3. Structural extraction
+4. Normalization
+5. Quality gate
+6. Current-state diff/update
+7. Matching
+8. Marketplace publish update
+
+## Bounded contexts
+
+### Ingestion / Normalize
+Готовит supplier reality.
+Не имеет права напрямую создавать marketplace reality.
+
+### Marketplace
+Работает только после matching и publish policy.
+Использует publishable subset supplier current layer.
 
 ## Environments
 
-PHONE / TEST / PROD — одинаковая структура, отличается только ETL_BASE.
+PHONE / TEST / PROD используют одинаковую концептуальную модель.
+Различаются только окружением выполнения, путями и operational policy.
 
 ## Git
 
 - main — стабильная ветка
-- test — рабочая ветка разработки
+- test — интеграционная ветка разработки
+- feature/*, refactor/*, prep/* — короткоживущие рабочие ветки
 
-## Docs (test branch)
+## Legacy note
 
-- docs/etl/ETL_CANON_TEST.md — Test environment contract
-
-## Archive
-
-- docs/etl/archive/
-- docs/etl/archive/ETL_CANON_V1.md
-- docs/etl/archive/ETL_CANON_V1_QA.md
-
----
-
-## MAX Bots Reliability Notes (production)
-
-This project’s MAX Bot1/Bot2 runtime uses a shared SQLite database.
-
-Key invariants (enforced per-connection in both bots):
-
-- journal_mode = WAL
-- synchronous = NORMAL
-- busy_timeout = 5000 ms
-- foreign_keys = ON
-
-Operational verification highlights:
-
-- Broken claim rows were detected earlier and have been fixed (claim_id present while claim_ts missing).
-- Dead rows observed were legitimate terminal outcomes (synthetic cleaned rows and a 404 error case after max attempts).
-
-Delivery semantics: at-least-once with bounded retries and dead-lettering.
+Старые документы и старые ingestion-only описания не являются главным законом системы.
+Главным reference-layer теперь является пакет в specs/contracts/.
 
 ## LLM docs
-- [MASTER SYSTEM MAP (LLM)](docs/architecture/MASTER_SYSTEM_MAP_LLM.md)
-- [COMPONENT MAP (LLM)](docs/architecture/COMPONENT_MAP_LLM.md)
-- [DATA FLOW DIAGRAM (LLM)](docs/architecture/DATA_FLOW_DIAGRAM_LLM.md)
-- [SYSTEM LAYERS DIAGRAM (LLM)](docs/architecture/SYSTEM_LAYERS_DIAGRAM_LLM.md)
+
+- docs/architecture/MASTER_SYSTEM_MAP_LLM.md
+- docs/architecture/COMPONENT_MAP_LLM.md
+- docs/architecture/DATA_FLOW_DIAGRAM_LLM.md
+- docs/architecture/SYSTEM_LAYERS_DIAGRAM_LLM.md
