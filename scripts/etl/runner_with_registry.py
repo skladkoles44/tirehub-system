@@ -47,11 +47,15 @@ def build_schema(atomic_path: Path):
 
 # ================= WRAPPER =================
 
-def run_with_registry(input_file: Path, out_dir: Path):
+def run_with_registry(input_file: Path, out_dir: Path, supplier_id: str):
     from scripts.etl.runner_v5_6_3 import run as base_run
 
+    supplier_id = str(supplier_id or "").strip()
+    if not supplier_id:
+        raise ValueError("supplier_id is required for run_with_registry")
+
     args = Namespace(
-        supplier_id="unknown",
+        supplier_id=supplier_id,
         max_rows=None,
         header_row_index=None,
         skip_header_rows=0,
@@ -107,11 +111,12 @@ def run_with_registry(input_file: Path, out_dir: Path):
 if __name__ == "__main__":
     import sys
 
-    if len(sys.argv) < 3:
-        print("usage: runner_with_registry.py <input> <out_dir>")
+    if len(sys.argv) < 4:
+        print("usage: runner_with_registry.py <input> <out_dir> <supplier_id>")
         sys.exit(1)
 
     inp = Path(sys.argv[1])
     out = Path(sys.argv[2])
+    supplier_id = sys.argv[3]
 
-    run_with_registry(inp, out)
+    run_with_registry(inp, out, supplier_id)

@@ -15,7 +15,7 @@ BATCH_SIZE = 1000
 
 def price_to_cents(price):
     if price is None:
-        return 0
+        return None
     return int(round(float(price) * 100))
 
 
@@ -23,12 +23,17 @@ def load_good_to_db(good_path, conn):
     items = []
     offers = []
     suppliers = set()
+    stats = {"rows_in": 0, "rows_skipped_missing_supplier": 0}
     
     with open(good_path) as f:
         for line in f:
+            stats["rows_in"] += 1
             row = json.loads(line)
             
-            supplier = row.get("supplier", "unknown")
+            supplier = (row.get("supplier_id") or row.get("supplier") or "").strip()
+            if not supplier:
+                stats["rows_skipped_missing_supplier"] += 1
+                continue
             suppliers.add(supplier)
             
             items.append((
@@ -97,6 +102,8 @@ def load_good_to_db(good_path, conn):
             """, batch)
             conn.commit()
 
+    return stats
+
 
 def main():
     if len(sys.argv) < 2:
@@ -109,9 +116,9 @@ def main():
         sys.exit(1)
     
     conn = psycopg2.connect(DB_URL)
-    load_good_to_db(good_path, conn)
+    stats = load_good_to_db(good_path, conn)
     conn.close()
-    print(f"✅ Loaded {good_path} to PostgreSQL")
+    print(json.dumps({"status": "ok", "good_path": str(good_path), "stats": stats}, ensure_ascii=False))
 
 
 if __name__ == "__main__":

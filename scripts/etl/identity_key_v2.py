@@ -221,11 +221,13 @@ def build_identity_key(row: Dict[str, Any]) -> Tuple[str, str, str, str, str]:
     identity = brand + model + width + height + diameter
     variant = load_index + speed_index + flags
     """
-    supplier_id = normalize_text(row.get("supplier_id")) or "unknown"
+    supplier_id = normalize_text(row.get("supplier_id"))
     supplier_sku = row.get("supplier_sku")
     
     # FAST PATH
     if supplier_sku:
+        if not supplier_id:
+            raise ValueError("supplier_id is required for SKU-based identity_key")
         key = f"{supplier_id}:{normalize_sku(supplier_sku)}"
         variant = build_variant_key(row, identity_key=key)
         return key, "sku", "high", normalize_sku(supplier_sku), variant
