@@ -351,11 +351,12 @@ def read_ods(p):
 
 # ==================== CORE ====================
 
-def run(inp: Path, out: Path, file_hash: str = None):
+def run(inp: Path, out: Path, file_hash: str = None, supplier_id: str = None):
     # Преобразуем строки в Path
     inp = Path(inp) if not isinstance(inp, Path) else inp
     out = Path(out) if not isinstance(out, Path) else out
     h = file_hash if file_hash else sha256_file(inp)
+    supplier_id = str(supplier_id or "").strip() or None
     
     out.mkdir(parents=True, exist_ok=True)
     fpath = out / "atomic_rows.ndjson"
@@ -405,6 +406,7 @@ def run(inp: Path, out: Path, file_hash: str = None):
                 "source_file": str(inp),
                 "file_hash": h,
                 "ingestion_id": h,
+                "supplier_id": supplier_id,
                 "sheet": sheet,
                 "row_index": idx,
                 "columns": cols
@@ -422,10 +424,11 @@ def run(inp: Path, out: Path, file_hash: str = None):
 
 def main():
     if len(sys.argv) < 3:
-        print("usage: runner_v5_6_3.py <input> <out_dir>")
+        print("usage: runner_v5_6_3.py <input> <out_dir> [supplier_id]")
         sys.exit(1)
     
-    run(Path(sys.argv[1]), Path(sys.argv[2]))
+    supplier_id = sys.argv[3] if len(sys.argv) >= 4 else None
+    run(Path(sys.argv[1]), Path(sys.argv[2]), supplier_id=supplier_id)
 
 
 if __name__ == "__main__":
