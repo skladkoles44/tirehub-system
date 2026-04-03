@@ -1,49 +1,94 @@
-from functools import lru_cache
-from pathlib import Path
-import yaml
+#!/usr/bin/env python3
+"""
+column_classifier_v2
+- root-based classification
+- normalization
+- scoring + priority
+- no supplier-specific rules
+"""
 
-ROLE_MAP_PATH = Path(__file__).resolve().parents[2] / "config" / "semantic_roles.yaml"
+import re
 
+# ==================== NORMALIZE ====================
 
-def _norm(x):
-    s = "" if x is None else str(x)
-    s = s.lower().replace("ё", "е").replace("_", " ").replace("-", " ")
-    return " ".join(s.split())
-
-
-@lru_cache(maxsize=1)
-def _load_role_map():
-    if not ROLE_MAP_PATH.exists():
-        return {}
-
-    data = yaml.safe_load(ROLE_MAP_PATH.read_text(encoding="utf-8")) or {}
-    if not isinstance(data, dict):
-        return {}
-
-    role_map = {}
-
-    for role, words in data.items():
-        if not isinstance(words, list):
-            continue
-
-        normalized = [_norm(w) for w in words if _norm(w)]
-        if normalized:
-            role_map[role] = normalized
-
-    return role_map
+def norm(h: str) -> str:
+    if not h:
+        return ""
+    h = h.lower()
+    h = re.sub(r"[()\-_/]+", " ", h)
+    h = re.sub(r"\s+", " ", h)
+    return h.strip()
 
 
-def _classify(h):
-    t = _norm(h)
-    role_map = _load_role_map()
+# ==================== ROOTS ====================
 
-    for role, words in role_map.items():
+ROOTS = {
+    "price_wholesale": ["опт", "b2b", "wholesale"],
+    "price_retail": ["розн", "retail"],
+    "stock": ["остат", "налич", "qty", "stock"],
+    "sku": ["артикул", "sku", "код"],
+    "model": ["наимен", "товар", "модель"],
+    "brand": ["бренд", "производ", "марка"],
+    "size": ["размер", "диаметр", "ширин", "профил"],
+    "season": ["сезон", "летн", "зим", "всесез"],
+    "country": ["стран"],
+}
+
+
+# ==================== PRIORITY ====================
+
+PRIORITY = {
+    "price_wholesale": 100,
+    "price_retail": 95,
+    "stock": 90,
+    "sku": 80,
+    "model": 70,
+    "brand": 60,
+    "size": 50,
+    "season": 40,
+    "country": 30,
+}
+
+
+# ==================== SCORING ====================
+
+def _score_role(h_norm: str):
+    scores = {k: 0 for k in ROOTS}
+
+    for role, words in ROOTS.items():
         for w in words:
-            if w in t:
-                return role
+            if w in h_norm:
+                scores[role] += 1
 
-    return "unknown"
+    # --- CONTEXT BOOST ---
+    if "цена" in h_norm or "price" in h_norm:
+        if "опт" in h_norm or "b2b" in h_norm:
+            scores["price_wholesale"] += 2
+        if "розн" in h_norm:
+            scores["price_retail"] += 2
+
+    # --- SELECT BEST ---
+    best_role = None
+    best_score = 0
+
+    for role, sc in scores.items():
+        if sc > 0:
+            weighted = sc * 10 + PRIORITY.get(role, 0)
+            if weighted > best_score:
+                best_score = weighted
+                best_role = role
+
+    return best_role
 
 
-def column_classifier(flat_headers):
-    return [{"role": _classify(h), "header": h} for h in flat_headers]
+# ==================== PUBLIC API ====================
+
+def classify_columns(headers, samples=None):
+    roles = []
+
+    for h in headers:
+        h_norm = norm(h)
+        role = _score_role(h_norm)
+        roles.append(role)
+
+    return roles

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-REPO=/data/data/com.termux/files/home/tirehub-system
+REPO=${ETL_REPO_ROOT:-$(pwd)}
 PYDEPS="$REPO/.pydeps/termux-py312"
 
 if [ -n "${VIRTUAL_ENV:-}" ]; then

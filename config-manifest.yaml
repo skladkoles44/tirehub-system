@@ -7,7 +7,7 @@ variables:
     required: false
     secret: false
     derived: false
-    example: /data/data/com.termux/files/home/var/tirehub-system/tmp/brinex_xlsx_all_sheets_v3
+    example: /storage/emulated/0/Download/ETL/tmp/brinex_xlsx_all_sheets_v3
     introduced_in: brinex
   BRINEX_XLSX_PATH:
     description: Path to Brinex XLSX file
@@ -88,7 +88,7 @@ variables:
     required: true
     secret: false
     derived: false
-    example: /data/data/com.termux/files/home/var/tirehub-system
+    example: /storage/emulated/0/Download/ETL
     introduced_in: cleanup-wave
   ETL_VENV_ROOT:
     description: Root directory for project virtual environments
@@ -183,7 +183,7 @@ variables:
     required: false
     secret: false
     derived: false
-    example: /home/Test_etl/var/tirehub-system/run/mail_ingest.env
+    example: /storage/emulated/0/Download/ETL/run/mail_ingest.env
     introduced_in: mail_ingest
   MAIL_INGEST_FORCE_BOOTSTRAP:
     description: Force bootstrap even if state exists
@@ -202,7 +202,7 @@ variables:
     required: false
     secret: false
     derived: false
-    example: /home/Test_etl/var/tirehub-system/run/mail_ingest_owner.lock
+    example: /storage/emulated/0/Download/ETL/run/mail_ingest_owner.lock
     introduced_in: mail_ingest
   MAIL_INGEST_STATE:
     description: Path to mail ingest state file
@@ -211,7 +211,7 @@ variables:
     required: true
     secret: false
     derived: false
-    example: /home/Test_etl/var/tirehub-system/run/mail_ingest_state.json
+    example: /storage/emulated/0/Download/ETL/run/mail_ingest_state.json
     introduced_in: mail_ingest
   MAIL_INGEST_UNKNOWN_POLICY:
     description: What to do with unknown suppliers
@@ -248,7 +248,7 @@ variables:
     required: false
     secret: false
     derived: false
-    example: /data/data/com.termux/files/home/var/tirehub-system/logs/smoke
+    example: /storage/emulated/0/Download/ETL/logs/smoke
     introduced_in: smoke
   SUPPLIERS_REGISTRY_PATH:
     description: Path to suppliers registry yaml
