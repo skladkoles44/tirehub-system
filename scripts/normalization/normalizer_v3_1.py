@@ -139,7 +139,7 @@ def index_columns(cols):
     return first,roles,prices
 
 from scripts.etl.size_extractor import enrich_from_name
-from scripts.etl.identity_key import build_identity_key
+from scripts.etl.identity_key_v2 import build_identity_key
 
 def build_candidate(first,roles,prices,stock,rec):
     if not any([first.get("sku"),first.get("name"),stock["qty"],prices]):
@@ -172,7 +172,21 @@ def build_candidate(first,roles,prices,stock,rec):
 def build_good(c):
     c = enrich_from_name(c)
 
-    identity = build_identity_key(c)
+    identity, identity_method, identity_strength, identity_raw, variant_key = build_identity_key({
+        "supplier_id": c.get("supplier_id"),
+        "supplier_sku": c.get("sku"),
+        "brand": c.get("brand"),
+        "model": c.get("model"),
+        "width": c.get("width"),
+        "height": c.get("height"),
+        "diameter": c.get("diameter"),
+        "load_index": c.get("load_index"),
+        "speed_index": c.get("speed_index"),
+        "name": c.get("name"),
+        "source_file": c.get("source_file"),
+        "row_index": c.get("row_index"),
+        "row_id": c.get("row_id"),
+    })
     source_file = c.get("source_file")
     source_type = "file"
     source_object_id = source_file
@@ -204,6 +218,10 @@ def build_good(c):
         "price_purchase_cents": to_cents(price_value),
         "currency": c.get("currency") or "RUB",
         "identity_key": identity,
+        "identity_method": identity_method,
+        "identity_strength": identity_strength,
+        "identity_raw": identity_raw,
+        "variant_key": variant_key,
         "quality_flags": c.get("quality_flags") or [],
         "is_reject": False,
         "reject_reason": None,
