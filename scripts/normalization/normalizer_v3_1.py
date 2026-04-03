@@ -86,6 +86,34 @@ def pick_price(prices):
     if "retail" in prices: return prices["retail"]
     return None
 
+
+def to_cents(v):
+    n = to_number(v)
+    if n is None:
+        return None
+    return int(round(float(n) * 100))
+
+def derive_availability(stock):
+    stock = stock or {}
+    qty = stock.get("qty")
+    kind = stock.get("kind")
+    if qty is not None:
+        if qty > 0:
+            return "in_stock"
+        if qty == 0:
+            return "out_of_stock"
+    if kind == "in_transit":
+        return "backorder"
+    if kind in ("gt", "gte"):
+        return "limited"
+    return "unknown"
+
+def derive_offer_key(c, identity_key):
+    sku = to_text(c.get("sku")) or ""
+    name = to_text(c.get("name")) or to_text(c.get("model")) or ""
+    raw = "|".join([str(identity_key or ""), sku, name])
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
+
 def index_columns(cols):
     first,roles,prices={}, {}, {}
     pi=0
@@ -123,6 +151,11 @@ def build_candidate(first,roles,prices,stock,rec):
         "table_index":rec.get("table_index"),
         "row_index":rec.get("row_index"),
         "fingerprint":((rec.get("layout") or {}).get("fingerprint")),
+        "run_id":rec.get("run_id"),
+        "ingestion_id":rec.get("ingestion_id"),
+        "supplier_id":rec.get("supplier_id"),
+        "warehouse":to_text(first.get("warehouse")),
+        "warehouse_key":to_text(first.get("warehouse_key")),
 
         "sku":to_text(first.get("sku")),
         "name":to_text(first.get("name") or first.get("model")),
@@ -137,32 +170,60 @@ def build_candidate(first,roles,prices,stock,rec):
     }
 
 def build_good(c):
-    c=enrich_from_name(c)
+    c = enrich_from_name(c)
+
+    identity = build_identity_key(c)
+    source_file = c.get("source_file")
+    source_type = "file"
+    source_object_id = source_file
+    run_id = c.get("run_id") or c.get("ingestion_id")
+    stock = c.get("stock") or {}
+    stock_qty = stock.get("qty")
+    stock_raw = stock.get("raw")
+    price_value = pick_price(c.get("prices", {}))
+    availability_status = derive_availability(stock)
+    warehouse_raw = to_text(c.get("warehouse")) or to_text(c.get("warehouse_raw"))
+    warehouse_key = to_text(c.get("warehouse_key"))
+    offer_key = derive_offer_key(c, identity)
 
     return {
-        "supplier_sku":c.get("sku"),
-        "normalizer_version":"3.1",
-        "identity_basis":c.get("identity_basis"),
+        "supplier_id": c.get("supplier_id"),
+        "source_type": source_type,
+        "source_object_id": source_object_id,
+        "run_id": run_id,
+        "offer_key": offer_key,
+        "warehouse_key": warehouse_key,
+        "availability_status": availability_status,
 
-        "name":c.get("name"),
-        "brand":c.get("brand"),
-        "model":c.get("model"),
+        "supplier_sku": c.get("sku"),
+        "raw_name": c.get("name"),
+        "item_type": c.get("item_type"),
+        "warehouse_raw": warehouse_raw,
+        "stock_qty_raw": stock_raw,
+        "stock_qty_normalized": stock_qty,
+        "price_purchase_cents": to_cents(price_value),
+        "currency": c.get("currency") or "RUB",
+        "identity_key": identity,
+        "quality_flags": c.get("quality_flags") or [],
+        "is_reject": False,
+        "reject_reason": None,
 
-        "price":pick_price(c.get("prices",{})),
-        "stock_qty":(c.get("stock") or {}).get("qty"),
-
-        "size":c.get("size") or [],
-        "prices":c.get("prices",{}),
-        "stock":c.get("stock"),
-
-        "identity_key":build_identity_key(c),
-
-        "lineage":{
-            "source_file":c.get("source_file"),
-            "sheet_name":c.get("sheet_name"),
-            "table_index":c.get("table_index"),
-            "row_index":c.get("row_index"),
-            "fingerprint":c.get("fingerprint"),
+        "normalizer_version": "3.1",
+        "identity_basis": c.get("identity_basis"),
+        "name": c.get("name"),
+        "brand": c.get("brand"),
+        "model": c.get("model"),
+        "price": price_value,
+        "stock_qty": stock_qty,
+        "size": c.get("size") or [],
+        "prices": c.get("prices", {}),
+        "stock": stock,
+        "lineage": {
+            "source_file": c.get("source_file"),
+            "sheet_name": c.get("sheet_name"),
+            "table_index": c.get("table_index"),
+            "row_index": c.get("row_index"),
+            "fingerprint": c.get("fingerprint"),
         }
     }
 
@@ -176,6 +237,11 @@ def process_row(rec):
                 "source_file":rec.get("source_file"),
                 "sheet_name":rec.get("sheet_name"),
                 "row_index":rec.get("row_index"),
+                "run_id":rec.get("run_id"),
+                "ingestion_id":rec.get("ingestion_id"),
+                "supplier_id":rec.get("supplier_id"),
+                "warehouse":off.get("warehouse") or rec.get("warehouse"),
+                "warehouse_key":off.get("warehouse_key") or rec.get("warehouse_key"),
 
                 "sku":base.get("sku"),
                 "name":base.get("name") or base.get("model"),
