@@ -1,7 +1,7 @@
 # Data Contracts
 
 ## Определение
-Data contract это формальное соглашение между producer слоя intake/extract и consumer слоя normalization.
+Data contract это формальное соглашение между upstream stage, который интерпретирует source layout, и normalization stage, который строит canonical fields.
 
 ## Назначение
 Data contract фиксирует:
@@ -46,7 +46,8 @@ quality_expectations:
 - При старте run контракт загружается.
 - Нарушение `required_columns` приводит к `REJECT`.
 - Нарушение `max_null_rate` приводит к `QUARANTINE`.
-- Добавление новых необязательных колонок приводит к `WARNING` и классифицируется как drift class `optional_added`.
+- Добавление новых необязательных колонок должно создавать drift event класса `optional_added`.
+- Само по себе наличие drift event не подменяет отдельное gate decision.
 
 ## Версионирование
 - `contract_version` увеличивается при breaking changes.

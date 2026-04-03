@@ -19,11 +19,12 @@
 | Массовое исчезновение складов > 50% | QUARANTINE |
 | Скачок медианной цены > 200% | QUARANTINE |
 | Рост строк без identity > 10% | QUARANTINE |
-| Drift class = optional_added | ACCEPT |
-| Drift class = optional_missing | QUARANTINE |
-| Drift class = required_missing | REJECT |
-| Drift class = type_changed | REJECT |
-| Drift class = structure_changed | REJECT |
+
+## Drift impact policy
+- Schema drift сначала классифицируется в `10_schema_drift_handling.md`.
+- Gate action не является частью определения drift class.
+- Оркестратор или run policy могут применять default mapping от drift class к gate action, но такая mapping является operational policy, а не частью drift classification.
+- Один и тот же drift class может приводить к разному gate action в зависимости от policy, rollout mode и criticality конкретного source contract.
 
 ## Примечание
 - Пороги являются initial thresholds и пересматриваются по фактической статистике поставщиков.

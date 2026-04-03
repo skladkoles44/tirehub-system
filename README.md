@@ -48,6 +48,9 @@ Raw Intake Layer -> Normalized Supplier Offers Current -> Marketplace Current
 
 ## Lifecycle
 
+Ниже приведён condensed summary lifecycle.
+Полный normative lifecycle задаётся в `specs/contracts/02_lifecycle.md`.
+
 1. Приём данных из источника
 2. Сохранение raw payload
 3. Structural extraction

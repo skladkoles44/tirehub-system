@@ -1,13 +1,16 @@
 # Жизненный цикл входящего пакета
 
+Данный документ задаёт expanded normative lifecycle.
+README содержит только condensed summary этого lifecycle.
+
 1. Приём данных из источника.
 2. Сохранение сырого payload.
 3. Структурное извлечение строк.
-4. Нормализация в supplier offers.
+4. Нормализация в canonical supplier offers.
 5. Quality gate.
 6. Сборка staging current snapshot.
 7. Diff с текущим состоянием.
-8. Обновление current offers.
+8. Обновление supplier offers current.
 9. Matching к каталогу.
 10. Обновление marketplace current.
 
