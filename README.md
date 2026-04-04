@@ -92,3 +92,10 @@ PHONE / TEST / PROD используют одинаковую концептуа
 - docs/architecture/COMPONENT_MAP_LLM.md
 - docs/architecture/DATA_FLOW_DIAGRAM_LLM.md
 - docs/architecture/SYSTEM_LAYERS_DIAGRAM_LLM.md
+
+## Engineering docs
+
+- [New engineer onboarding](docs/onboarding/new_engineer.md)
+- [Legacy donor map](docs/legacy_donor/legacy_donor_map.md)
+- [Atomic rows contract](docs/contracts/atomic_rows_contract.md)
+- [Canonical supplier offer contract](docs/contracts/canonical_supplier_offer_contract.md)
