@@ -16,6 +16,7 @@
 11. 11_versioning.md
 12. 12_short_practice.md
 13. 16_data_contracts.md
+14. 17_inventory_facts_contract.md
 
 ## Правило
 Файлы в `specs/contracts/` являются основным reference-слоем для архитектурных и data-contract решений.

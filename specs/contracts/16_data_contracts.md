@@ -58,3 +58,16 @@ quality_expectations:
 - Drift classification задаётся в `10_schema_drift_handling.md`.
 - Gate action задаётся в `06_quality_gates.md`.
 - Replay versioning задаётся в `11_versioning.md`.
+
+## Связь с inventory_facts contract
+
+Для location-aware supplier inventory введён отдельный extraction/output contract:
+
+`specs/contracts/17_inventory_facts_contract.md`
+
+Он фиксирует минимальный contract для `inventory_facts.ndjson` и покрывает оба source-pattern:
+- `explicit_row_location`
+- `implicit_header_location`
+
+Этот контракт не заменяет domain/layout contracts, а дополняет их как отдельный inventory extraction layer до downstream inventory processing.
+
