@@ -1,0 +1,81 @@
+{
+  "version": 2,
+  "account_baseline": {
+    "default_address_id": 64302
+  },
+  "goods_price_rest": {
+    "status": "EXACT",
+    "known_good_code": "4405300",
+    "all_warehouses_exact": {
+      "code_list": ["4405300"],
+      "wrh_list": [],
+      "include_paid_delivery": false,
+      "user_address_id": 64302,
+      "searchCodeByOccurence": false,
+      "request_payload_sha256": "e41f6c32fd23a5530ca3a80d6702770223ee0a6cd0cbc5b5157bfad34da644fa",
+      "response_sha256": "c3a8b18b824c2211a07ccdb085fb3c7d21f896ac0846ce12bbb991a71eac61fb",
+      "artifact": "var/probes/4tochki/20260424T074615Z_goods-exact.json"
+    },
+    "single_warehouse_exact": {
+      "code_list": ["4405300"],
+      "wrh_list": [232],
+      "include_paid_delivery": false,
+      "user_address_id": 64302,
+      "searchCodeByOccurence": false,
+      "request_payload_sha256": "11a8f2abf8eed59869969b42b8d23163ecb0b8090fa4e61067ac9f6ab6ce3f6a",
+      "response_sha256": "8ed3cc6585cee7f7c9d038399d483a2a88a44f8278ccaefe185a58fa2b00aef3",
+      "artifact": "var/probes/4tochki/20260424T075222Z_goods-wrh-232.json"
+    },
+    "all_warehouses_occurrence": {
+      "code_list": ["4405300"],
+      "wrh_list": [],
+      "include_paid_delivery": false,
+      "user_address_id": 64302,
+      "searchCodeByOccurence": true,
+      "request_payload_sha256": "a2b80ba7fe71372d552f96f15165680b1b5ee83bc2494dc7245efbf97160f95d",
+      "response_sha256": "c3a8b18b824c2211a07ccdb085fb3c7d21f896ac0846ce12bbb991a71eac61fb",
+      "artifact": "var/probes/4tochki/20260424T080000Z_goods-occurrence.json"
+    }
+  },
+  "find_tyre": {
+    "status": "EXACT",
+    "known_good_query": {
+      "width_min": 185,
+      "width_max": 185,
+      "height_min": 60,
+      "height_max": 60,
+      "diameter_min": 15,
+      "diameter_max": 15,
+      "season_list": ["w"],
+      "wrh_list": [],
+      "include_paid_delivery": false,
+      "user_address_id": 64302,
+      "request_payload_sha256": "28153c1527389cf523658ce9742b2472fd423147375756d92b8c74f70effa6aa",
+      "response_sha256": "f03ed7c5954b1410c843215a3e0c0fe8f549e1941af8a31a15e8234343d0d30f",
+      "artifact": "var/probes/4tochki/20260424T083102Z_tyre.json"
+    },
+    "page": 0,
+    "page_size": 50
+  },
+  "find_disk": {
+    "status": "EXACT",
+    "known_good_query": {
+      "width_min": 6.5,
+      "width_max": 6.5,
+      "diameter_min": 16,
+      "diameter_max": 16,
+      "bolts_count_min": 5,
+      "bolts_count_max": 5,
+      "bolts_spacing_min": 114.3,
+      "bolts_spacing_max": 114.3,
+      "wrh_list": [],
+      "include_paid_delivery": false,
+      "user_address_id": 64302,
+      "request_payload_sha256": "52d7d7d9406c8dd8151ef23ea6ff20eb21aea0cae78a4ec5d082100c58e656b0",
+      "response_sha256": "a4511a8afa6216b108078d5d6934ba669fd92b95e2459d3905c2f1324674e7d5",
+      "artifact": "var/probes/4tochki/20260424T083846Z_disk-candidate.json"
+    },
+    "page": 0,
+    "page_size": 50
+  }
+}
