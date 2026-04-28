@@ -7,13 +7,13 @@ from pathlib import Path
 from sqlalchemy import CheckConstraint, ForeignKeyConstraint, Index, PrimaryKeyConstraint, UniqueConstraint
 from sqlalchemy.dialects import postgresql
 
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from layer_a_r4.db.base import Base  # noqa: E402
 import layer_a_r4.models  # noqa: F401,E402
-import scripts.parity_check_r4 as static_parity  # noqa: E402
+from layer_a_r4.scripts import parity_check_r4 as static_parity  # noqa: E402
 
 
 def norm_default(value):
