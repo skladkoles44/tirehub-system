@@ -1,0 +1,42 @@
+{
+  "artifacts": {
+    "docs/integrations/4tochki/R1_READ_SIDE_BASELINE_SUMMARY.md": {
+      "exists": true,
+      "sha256": "2d948f032be38bb5f92ff670f09024561b9b7b840e63d188b8f8101a6c706145",
+      "size_bytes": 1293
+    },
+    "docs/integrations/4tochki/baseline.md": {
+      "exists": true,
+      "sha256": "1a987ecf763654a36b661fc80ea4ca4d061319c782f56d500537c5d2c3e12cf8",
+      "size_bytes": 30636
+    },
+    "scripts/probes/capture_4tochki_probe.py": {
+      "exists": true,
+      "sha256": "5d61b45bee1972d09e90d2610be9ae5772687074eb6a2c685f9d2a0b115ef650",
+      "size_bytes": 11170
+    },
+    "src/integrations/fourtochki/client.py": {
+      "exists": true,
+      "sha256": "a15032af9dd2e5d0d15794eb9b506894fced5cfb2bbfef82780d910a8dd8a114",
+      "size_bytes": 14000
+    },
+    "src/integrations/fourtochki/models.py": {
+      "exists": true,
+      "sha256": "619150d7d3aaef8acec4739b208f8a8b40b57a8f0939e807faf220089ca1d369",
+      "size_bytes": 6350
+    },
+    "tests/probes/probe_inputs.json": {
+      "exists": true,
+      "sha256": "9497ec1c53a48130327443e39fccf886354c26677089f23f39c6fe6137bfe198",
+      "size_bytes": 2914
+    },
+    "tests/probes/test_4tochki_read_baseline.py": {
+      "exists": true,
+      "sha256": "80fcd39334f0c4dd247b7a8b475767ee3aef7975b3ba5a9df6c58c64643e12ab",
+      "size_bytes": 7439
+    }
+  },
+  "baseline_commit": "e51047980f573b69b2832fbd82104a72274fb9df",
+  "manifest_parent_commit": "41ba2dbd76c423f0db3b03d35667096e019cc893",
+  "manifest_schema_version": 1
+}
