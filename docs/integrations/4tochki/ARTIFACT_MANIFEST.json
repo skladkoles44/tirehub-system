@@ -10,6 +10,16 @@
       "sha256": "1a987ecf763654a36b661fc80ea4ca4d061319c782f56d500537c5d2c3e12cf8",
       "size_bytes": 30636
     },
+    "scripts/ops/4tochki_read_baseline.sh": {
+      "exists": true,
+      "sha256": "4c850ce8a5a7ade1b52fca7d92b6fed96adfd079c905badb0cf1553786a8963d",
+      "size_bytes": 451
+    },
+    "scripts/ops/verify_artifact_manifest.py": {
+      "exists": true,
+      "sha256": "aed66e86b8b2ae9a2b986d985a65dd694297b1a3ea97bd85b4f08508a9d90e6e",
+      "size_bytes": 1813
+    },
     "scripts/probes/capture_4tochki_probe.py": {
       "exists": true,
       "sha256": "5d61b45bee1972d09e90d2610be9ae5772687074eb6a2c685f9d2a0b115ef650",
