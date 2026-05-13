@@ -204,7 +204,7 @@ def update_shops_from_stock(conn, items: List[Dict]):
 
     with conn.cursor() as cur:
         execute_values(cur, """
-            INSERT INTO _shinservice_shops (shop_id, name, updated_at)
+            INSERT INTO _shinservice_shops (shop_id, title, updated_at)
             VALUES %s
             ON CONFLICT (shop_id) DO UPDATE SET updated_at = NOW()
         """, [(sid, f"Shop {sid}", datetime.now()) for sid in shop_ids])
@@ -228,7 +228,7 @@ def update_shops_from_catalog(conn, items: List[Dict]):
 
     with conn.cursor() as cur:
         execute_values(cur, """
-            INSERT INTO _shinservice_shops (shop_id, name, updated_at)
+            INSERT INTO _shinservice_shops (shop_id, title, updated_at)
             VALUES %s
             ON CONFLICT (shop_id) DO UPDATE SET updated_at = NOW()
         """, [(sid, f"Shop {sid}", datetime.now()) for sid in shop_ids])
