@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ETL Шинсервис v4.3 — production-ready (полное логирование с traceback)
+ETL Шинсервис v4.9 — production-ready (финальная стабильная версия)
 
 Режимы:
   stock - обновление остатков (каждые 30 минут)
@@ -28,13 +28,14 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 SHINSERVICE_UUID_TYRES = os.getenv("SHINSERVICE_UUID_TYRES", "019dbb42-9e14-b7d0-a829-b64101ead29f")
 SHINSERVICE_UUID_DISKS = os.getenv("SHINSERVICE_UUID_DISKS", "019dbb40-9828-be33-9728-e5d7db368ca6")
 BASE_URL = "https://duplo-api.shinservice.ru/api/v1/exporter"
-DB_CONN = os.getenv("DB_CONN", "dbname=canonical user=canonical host=localhost")
+DB_CONN = os.getenv("DB_CONN", "dbname=canonical user=canonical host=/var/run/postgresql")
 
 BATCH_SIZE = int(os.getenv("SHINSERVICE_BATCH_SIZE", "2000"))
 CHUNK_SIZE = int(os.getenv("SHINSERVICE_CHUNK_SIZE", "10000"))
 REQUEST_TIMEOUT = int(os.getenv("SHINSERVICE_TIMEOUT", "90"))
 MAX_WORKERS = int(os.getenv("SHINSERVICE_MAX_WORKERS", "2"))
 REQUEST_DELAY = float(os.getenv("SHINSERVICE_REQUEST_DELAY", "0.15"))
+MAX_STOCK_RECORDS = int(os.getenv("SHINSERVICE_MAX_STOCK_RECORDS", "1000000"))
 
 # ====================== ПОТОКОБЕЗОПАСНЫЙ СЧЁТЧИК ======================
 class SafeCounter:
@@ -77,25 +78,20 @@ class JsonFormatter(logging.Formatter):
             "extra": getattr(record, "extra", {})
         }
         
-        # Добавляем traceback при ошибках
         if record.exc_info:
             log_entry["traceback"] = "".join(traceback.format_exception(*record.exc_info))
         
         return json.dumps(log_entry, ensure_ascii=False)
 
-# Настройка root logger без basicConfig
 root_logger = logging.getLogger()
 root_logger.setLevel(logging.INFO)
 
-# Удаляем существующие handlers, если есть
 for handler in root_logger.handlers[:]:
     root_logger.removeHandler(handler)
 
-# Консольный handler
 console_handler = logging.StreamHandler()
 console_handler.setFormatter(JsonFormatter())
 
-# Файловый handler
 file_handler = logging.FileHandler('/var/log/shinservice_etl.log')
 file_handler.setFormatter(JsonFormatter())
 
@@ -106,7 +102,7 @@ logger = logging.getLogger(__name__)
 
 # ====================== HTTP СЕССИЯ ======================
 session = requests.Session()
-session.headers.update({"User-Agent": "Canonical-Core-ETL/4.3 (Shinservice)"})
+session.headers.update({"User-Agent": "Canonical-Core-ETL/4.9 (Shinservice)"})
 
 
 # ====================== FETCH C RETRY И МОНИТОРИНГОМ ======================
@@ -125,12 +121,37 @@ def fetch_data(uuid: str, export_type: str, request_name: str) -> Tuple[List[Dic
         
         items = []
         source = "unknown"
-        if isinstance(data, dict):
-            for key in ("tyre", "disk", "items"):
+        
+        # Для stock API поддерживаем максимальное количество форматов
+        if export_type == "stock":
+            if isinstance(data, list):
+                items = data
+                source = "stock_array"
+            elif isinstance(data, dict):
+                # Обёртка с полем status OK
+                if data.get("status") == "OK":
+                    items = (data.get("data") or data).get("items", [])
+                    source = "stock_wrapper"
+                # Максимальный fallback
+                if not items:
+                    nested = data.get("data") or data
+                    items = nested.get("items") or nested.get("stock") or nested.get("stock_list") or []
+                    source = "stock_nested"
+        
+        # Если items всё ещё пуст, пробуем другие форматы
+        if not items and isinstance(data, dict):
+            # Прямые массивы в ключах tyre/disk
+            for key in ("tyre", "disk"):
                 chunk = data.get(key) or []
                 if isinstance(chunk, list):
                     items.extend(chunk)
                     source = key
+            # Если нет tyre/disk, пробуем items
+            if not items and "items" in data:
+                chunk = data.get("items") or []
+                if isinstance(chunk, list):
+                    items.extend(chunk)
+                    source = "items"
         
         duration = time.perf_counter() - start
         logger.info(f"Fetch completed", extra={
@@ -160,22 +181,24 @@ def submit_requests(executor, requests_config):
     futures = []
     for i, (uuid, export_type, request_name) in enumerate(requests_config):
         if i > 0:
-            logger.info(f"Delaying request", extra={"delay": REQUEST_DELAY, "request": request_name})
+            logger.info("Delaying request", extra={"delay": REQUEST_DELAY, "request": request_name})
             time.sleep(REQUEST_DELAY)
         futures.append(executor.submit(fetch_data, uuid, export_type, request_name))
     return futures
 
 
 # ====================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ======================
-def update_shops(conn, items: List[Dict]):
-    """Обновляет справочник складов из amount_shopId_* полей"""
-    shop_ids = {
-        int(k.replace("amount_shopId_", ""))
-        for item in items
-        for k in item
-        if k.startswith("amount_shopId_") and k.replace("amount_shopId_", "").isdigit()
-    }
-
+def update_shops_from_stock(conn, items: List[Dict]):
+    """Обновляет справочник складов из stock API (поле store_id)"""
+    shop_ids = set()
+    for item in items:
+        store_id = item.get("store_id")
+        if store_id is not None:
+            try:
+                shop_ids.add(int(store_id))
+            except (ValueError, TypeError):
+                logger.warning(f"Invalid store_id: {store_id}")
+    
     if not shop_ids:
         return
 
@@ -187,7 +210,31 @@ def update_shops(conn, items: List[Dict]):
         """, [(sid, f"Shop {sid}", datetime.now()) for sid in shop_ids])
         conn.commit()
 
-    logger.info(f"Shops updated", extra={"count": len(shop_ids), "status": "success"})
+    logger.info(f"Shops updated from stock", extra={"count": len(shop_ids), "status": "success"})
+
+
+def update_shops_from_catalog(conn, items: List[Dict]):
+    """Обновляет справочник складов из amount_shopId_* полей (catalog/price)"""
+    shop_ids = set()
+    for item in items:
+        for k in item:
+            if k.startswith("amount_shopId_"):
+                parts = k.replace("amount_shopId_", "")
+                if parts.isdigit():
+                    shop_ids.add(int(parts))
+    
+    if not shop_ids:
+        return
+
+    with conn.cursor() as cur:
+        execute_values(cur, """
+            INSERT INTO _shinservice_shops (shop_id, name, updated_at)
+            VALUES %s
+            ON CONFLICT (shop_id) DO UPDATE SET updated_at = NOW()
+        """, [(sid, f"Shop {sid}", datetime.now()) for sid in shop_ids])
+        conn.commit()
+
+    logger.info(f"Shops updated from catalog", extra={"count": len(shop_ids), "status": "success"})
 
 
 def batch_insert(conn, table: str, columns: List[str], values: List[tuple], conflict: str = None) -> int:
@@ -203,6 +250,15 @@ def batch_insert(conn, table: str, columns: List[str], values: List[tuple], conf
         conn.commit()
 
     return len(values)
+
+
+def safe_int(value, default=0):
+    """Безопасное преобразование в int"""
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    return default
 
 
 def update_products(conn, items: List[Dict]) -> int:
@@ -284,8 +340,7 @@ def update_offers_prices(conn, items: List[Dict]) -> int:
     total = 0
     for i in range(0, len(values), CHUNK_SIZE):
         chunk = values[i:i + CHUNK_SIZE]
-        count = batch_insert(conn, "_shinservice_offers", columns, chunk, conflict)
-        total += count
+        total += batch_insert(conn, "_shinservice_offers", columns, chunk, conflict)
         logger.info(f"Prices chunk", extra={"chunk": i // CHUNK_SIZE + 1, "rows": len(chunk), "status": "success"})
 
     logger.info(f"Prices total updated", extra={"total": total, "table": "offers", "status": "success"})
@@ -293,47 +348,62 @@ def update_offers_prices(conn, items: List[Dict]) -> int:
 
 
 def update_offers_stock(conn, items: List[Dict]) -> int:
-    """Обновляет остатки"""
+    """Обновляет остатки из stock API (формат: массив офферов)"""
     columns = ["sku", "shop_id", "stock", "raw_json", "updated_at"]
-
-    all_values = []
+    
+    values = []
+    total_processed = 0
     for item in items:
         sku = item.get("sku")
-        if not sku:
-            continue
-        for key, val in item.items():
-            if key.startswith("amount_shopId_") and isinstance(val, (int, float)):
-                shop_id_str = key.replace("amount_shopId_", "")
-                if shop_id_str.isdigit():
-                    all_values.append((
-                        sku,
-                        int(shop_id_str),
-                        int(val),
-                        json.dumps(item, ensure_ascii=False),
-                        datetime.now()
-                    ))
-
-    if not all_values:
+        store_id = item.get("store_id")
+        # Поддержка разных названий полей с остатками
+        stock_total = item.get("stock_total") or item.get("amount_total") or item.get("rest", 0)
+        # Безопасное преобразование в int
+        stock_total = safe_int(stock_total, 0)
+        
+        if sku and store_id is not None:
+            try:
+                store_id_int = safe_int(store_id)
+                if store_id_int == 0:
+                    logger.warning(f"Invalid store_id for sku={sku}: {store_id}")
+                    continue
+                values.append((
+                    sku,
+                    store_id_int,
+                    stock_total,
+                    json.dumps(item, ensure_ascii=False),
+                    datetime.now()
+                ))
+                total_processed += 1
+            except (ValueError, TypeError) as e:
+                logger.warning(f"Invalid stock data for sku={sku}: {e}")
+                continue
+        
+        # Защита от переполнения памяти
+        if len(values) >= MAX_STOCK_RECORDS:
+            logger.warning(f"Reached MAX_STOCK_RECORDS limit ({MAX_STOCK_RECORDS}), stopping")
+            break
+    
+    if not values:
         logger.info("No stock to update")
         return 0
-
+    
     conflict = ("(sku, shop_id) DO UPDATE SET "
                 "stock=EXCLUDED.stock, raw_json=EXCLUDED.raw_json, updated_at=NOW()")
-
-    total = 0
-    for i in range(0, len(all_values), CHUNK_SIZE):
-        chunk = all_values[i:i + CHUNK_SIZE]
-        count = batch_insert(conn, "_shinservice_offers", columns, chunk, conflict)
-        total += count
-        logger.info(f"Stock chunk", extra={"chunk": i // CHUNK_SIZE + 1, "rows": len(chunk), "status": "success"})
-
-    unique_skus = {v[0] for v in all_values}
-    logger.info(f"Stock total updated", extra={"total": total, "unique_skus": len(unique_skus), "table": "offers", "status": "success"})
+    
+    total = batch_insert(conn, "_shinservice_offers", columns, values, conflict)
+    unique_skus = {v[0] for v in values}
+    logger.info(f"Stock total updated", extra={
+        "total": total, 
+        "unique_skus": len(unique_skus), 
+        "total_processed": total_processed,
+        "status": "success"
+    })
     return total
 
 
 def vacuum_analyze(conn):
-    """Оптимизация таблиц после full обновления"""
+    """Оптимизация таблиц"""
     logger.info("Starting VACUUM ANALYZE")
     with conn.cursor() as cur:
         cur.execute("VACUUM ANALYZE _shinservice_products")
@@ -371,7 +441,7 @@ def main():
                     all_catalog.extend(items)
                 
                 # Пауза
-                logger.info(f"Pausing before price requests", extra={"delay": REQUEST_DELAY})
+                logger.info("Pausing before price requests", extra={"delay": REQUEST_DELAY})
                 time.sleep(REQUEST_DELAY)
                 
                 # Цены
@@ -386,12 +456,12 @@ def main():
                     all_prices.extend(items)
 
             # Обновление
-            update_shops(conn, all_catalog)
+            update_shops_from_catalog(conn, all_catalog)
             update_products(conn, all_catalog)
             update_offers_prices(conn, all_prices)
             vacuum_analyze(conn)
             
-            logger.info(f"Full update completed", extra={"mode": "full", "status": "success"})
+            logger.info("Full update completed", extra={"mode": "full", "status": "success"})
 
         else:  # stock
             with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
@@ -405,16 +475,17 @@ def main():
                     items, _ = future.result()
                     all_stock.extend(items)
 
-            update_shops(conn, all_stock)
+            # Обновление
+            update_shops_from_stock(conn, all_stock)
             update_offers_stock(conn, all_stock)
             
-            logger.info(f"Stock update completed", extra={"mode": "stock", "status": "success"})
+            logger.info("Stock update completed", extra={"mode": "stock", "status": "success"})
 
         elapsed = time.perf_counter() - start_total
-        logger.info(f"Update finished", extra={"mode": mode.upper(), "duration": round(elapsed, 2), "status": "success"})
+        logger.info("Update finished", extra={"mode": mode.upper(), "duration": round(elapsed, 2), "status": "success"})
 
     except Exception as e:
-        logger.error(f"Update failed", extra={"mode": mode.upper(), "error": str(e), "status": "error"}, exc_info=True)
+        logger.error("Update failed", extra={"mode": mode.upper(), "error": str(e), "status": "error"}, exc_info=True)
         sys.exit(1)
     finally:
         conn.close()
