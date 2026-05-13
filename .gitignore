@@ -57,3 +57,6 @@ cache/
 # python cache
 __pycache__/
 *.pyc
+.env
+.env.*
+*token*
