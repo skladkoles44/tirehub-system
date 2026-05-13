@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ETL Шинсервис v6.3 — production-ready (финальная стабильная версия)
+ETL Шинсервис v6.5 — production-ready (финальная стабильная версия)
 
 Режимы:
   stock - обновление остатков (каждые 30 минут)
@@ -91,7 +91,6 @@ def update_run_status_finish(conn, run_id: str, mode: str, status: str,
                               records_processed: int = 0, records_failed: int = 0):
     """Записывает финальный статус запуска"""
     with conn.cursor() as cur:
-        # run_id — PRIMARY KEY, mode не обязателен в WHERE
         cur.execute("""
             UPDATE _shinservice_etl_runs 
             SET status = %s,
@@ -196,7 +195,7 @@ def setup_logging(run_id: str):
 
 # ====================== HTTP СЕССИЯ ======================
 session = requests.Session()
-session.headers.update({"User-Agent": "Canonical-Core-ETL/6.3 (Shinservice)"})
+session.headers.update({"User-Agent": "Canonical-Core-ETL/6.5 (Shinservice)"})
 
 
 # ====================== FETCH ======================
@@ -286,8 +285,6 @@ def _extract_shop_ids_from_stock(items: List[Dict]) -> Set[int]:
 
 def _extract_shop_ids_from_catalog(items: List[Dict]) -> Set[int]:
     shop_ids = set()
-    # logger не используется в этой функции, но для единообразия получаем
-    _ = get_logger()
     for item in items:
         for k in item:
             if k.startswith("amount_shopId_"):
@@ -543,27 +540,37 @@ def update_offers_stock(conn, items: List[Dict], run_id: str) -> Tuple[int, int]
 
 
 def vacuum_analyze(conn):
+    """Выполняет VACUUM ANALYZE вне активной транзакции"""
     logger = get_logger()
     if logger:
         logger.info("Starting VACUUM ANALYZE")
+    
     conn.commit()
+    
     with conn.cursor() as cur:
         cur.execute("VACUUM ANALYZE _shinservice_products")
         cur.execute("VACUUM ANALYZE _shinservice_offers")
         cur.execute("VACUUM ANALYZE _shinservice_shops")
-        conn.commit()
+    
+    conn.commit()
+    
     if logger:
         logger.info("VACUUM ANALYZE completed", extra={"status": "success"})
 
 
 def analyze_offers(conn):
+    """Выполняет ANALYZE для таблицы offers"""
     logger = get_logger()
     if logger:
         logger.info("Running ANALYZE _shinservice_offers")
+    
     conn.commit()
+    
     with conn.cursor() as cur:
         cur.execute("ANALYZE _shinservice_offers")
-        conn.commit()
+    
+    conn.commit()
+    
     if logger:
         logger.info("ANALYZE completed", extra={"status": "success"})
 
