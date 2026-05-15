@@ -1,696 +1,390 @@
 #!/usr/bin/env python3
 """
-ETL Шинсервис v6.5 — production-ready (финальная стабильная версия)
-
-Режимы:
-  stock - обновление остатков (каждые 30 минут)
-  full  - полное обновление каталога + цен + остатков + складов (раз в сутки)
+ETL Шинсервис v12.17 — Production Ready
 """
 
-import sys
-import json
-import logging
-import traceback
-import time
-import os
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
-from typing import Dict, List, Tuple, Set
+import sys, json, os, hashlib, logging, traceback, time
 from uuid import uuid4
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import contextmanager
 
 import psycopg2
 import requests
 from psycopg2.extras import execute_values
+from psycopg2.pool import ThreadedConnectionPool
+from psycopg2 import errors as psycopg2_errors
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
-# ====================== КОНФИГУРАЦИЯ ======================
+# ====================== CONFIG ======================
 SHINSERVICE_UUID_TYRES = os.getenv("SHINSERVICE_UUID_TYRES", "019dbb42-9e14-b7d0-a829-b64101ead29f")
 SHINSERVICE_UUID_DISKS = os.getenv("SHINSERVICE_UUID_DISKS", "019dbb40-9828-be33-9728-e5d7db368ca6")
 BASE_URL = "https://duplo-api.shinservice.ru/api/v1/exporter"
 DB_CONN = os.getenv("DB_CONN", "dbname=canonical user=canonical host=/var/run/postgresql")
+TOKEN = os.getenv("SHINSERVICE_TOKEN")
 
-BATCH_SIZE = int(os.getenv("SHINSERVICE_BATCH_SIZE", "2000"))
-CHUNK_SIZE = int(os.getenv("SHINSERVICE_CHUNK_SIZE", "10000"))
 REQUEST_TIMEOUT = int(os.getenv("SHINSERVICE_TIMEOUT", "90"))
-MAX_WORKERS = int(os.getenv("SHINSERVICE_MAX_WORKERS", "2"))
-REQUEST_DELAY = float(os.getenv("SHINSERVICE_REQUEST_DELAY", "0.15"))
-MAX_STOCK_RECORDS = int(os.getenv("SHINSERVICE_MAX_STOCK_RECORDS", "1000000"))
+MAX_WORKERS = int(os.getenv("SHINSERVICE_MAX_WORKERS", "3"))
+EXECUTE_VALUES_PAGE_SIZE = 2500
+LOCK_TIMEOUT_MINUTES = int(os.getenv("SHINSERVICE_LOCK_TIMEOUT", "60"))
 
-# ====================== DDL ДЛЯ ДОПОЛНИТЕЛЬНЫХ ТАБЛИЦ ======================
-DDL_RUNS_TABLE = """
-CREATE TABLE IF NOT EXISTS _shinservice_etl_runs (
-    run_id TEXT PRIMARY KEY,
-    mode TEXT,
-    status TEXT,
-    records_processed INT DEFAULT 0,
-    records_failed INT DEFAULT 0,
-    started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    finished_at TIMESTAMP
+# ====================== VALIDATION ======================
+if not TOKEN:
+    print("❌ Ошибка: SHINSERVICE_TOKEN не установлен")
+    sys.exit(1)
+
+if not DB_CONN:
+    print("❌ Ошибка: DB_CONN не установлен")
+    sys.exit(1)
+
+# ====================== GLOBAL SESSION & POOL ======================
+session = requests.Session()
+session.headers.update({
+    "Authorization": f"Bearer {TOKEN}",
+    "Accept-Encoding": "gzip, deflate",
+    "User-Agent": "CanonicalCore-ETL/12.17"
+})
+
+db_pool = ThreadedConnectionPool(
+    minconn=2,
+    maxconn=MAX_WORKERS + 4,
+    dsn=DB_CONN
 )
-"""
 
-DDL_ERRORS_TABLE = """
-CREATE TABLE IF NOT EXISTS _shinservice_etl_errors (
-    id BIGSERIAL PRIMARY KEY,
-    run_id TEXT,
-    sku TEXT,
-    error TEXT,
-    raw_json JSONB,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-)
-"""
+import atexit
+atexit.register(session.close)
+atexit.register(db_pool.closeall)
 
+# ====================== LOGGING ======================
+def setup_logging():
+    """Настраивает корневой логгер. Вызывается один раз при старте."""
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+    for h in logger.handlers[:]:
+        logger.removeHandler(h)
 
-def ensure_tables(conn):
-    """Создаёт дополнительные таблицы при первом запуске"""
+    class JsonFormatter(logging.Formatter):
+        def format(self, record):
+            log_entry = {
+                "time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "level": record.levelname,
+                "message": record.getMessage(),
+                "run_id": getattr(record, "run_id", None),
+                "mode": getattr(record, "mode", None),
+                "module": record.module,
+            }
+            if record.exc_info:
+                log_entry["traceback"] = "".join(traceback.format_exception(*record.exc_info))
+            return json.dumps(log_entry, ensure_ascii=False, default=str)
+
+    formatter = JsonFormatter()
+    console = logging.StreamHandler()
+    console.setFormatter(formatter)
+    fileh = logging.FileHandler("/var/log/shinservice_etl.log", encoding="utf-8")
+    fileh.setFormatter(formatter)
+    logger.addHandler(console)
+    logger.addHandler(fileh)
+    return logger
+
+# ====================== CONTEXT MANAGER ======================
+@contextmanager
+def get_db_conn():
+    """Безопасное получение соединения из пула с восстановлением autocommit"""
+    conn = db_pool.getconn()
+    autocommit_original = conn.autocommit
+    try:
+        yield conn
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.rollback()
+        conn.autocommit = autocommit_original
+        db_pool.putconn(conn)
+
+# ====================== DB: миграции ======================
+def migrate_schema(logger):
+    """
+    Выполняет миграции схемы БД.
+    Вызывается только при RUN_MIGRATIONS=true.
+    """
+    logger.info("migrate_schema: starting")
+    with get_db_conn() as conn:
+        autocommit_original = conn.autocommit
+        conn.autocommit = True
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS _shinservice_etl_runs (
+                        run_id TEXT PRIMARY KEY,
+                        mode TEXT,
+                        status TEXT,
+                        records_processed INT DEFAULT 0,
+                        records_failed INT DEFAULT 0,
+                        started_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                        finished_at TIMESTAMPTZ,
+                        catalog_worker_duration_ms NUMERIC(10,2),
+                        price_worker_duration_ms NUMERIC(10,2),
+                        stock_worker_duration_ms NUMERIC(10,2),
+                        catalog_rows INT,
+                        price_rows INT,
+                        stock_rows INT
+                    )
+                """)
+                cur.execute("ALTER TABLE _shinservice_etl_runs ADD COLUMN IF NOT EXISTS lock_owner INT")
+                cur.execute("ALTER TABLE _shinservice_etl_runs ADD COLUMN IF NOT EXISTS locked_at TIMESTAMPTZ")
+
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS _shinservice_raw (
+                        id BIGSERIAL PRIMARY KEY,
+                        endpoint_type TEXT NOT NULL CHECK (endpoint_type IN ('catalog', 'price', 'stock')),
+                        data JSONB NOT NULL,
+                        data_hash TEXT NOT NULL,
+                        run_id TEXT,
+                        loaded_at TIMESTAMPTZ DEFAULT NOW(),
+                        sku TEXT GENERATED ALWAYS AS (data->>'sku') STORED,
+                        item_type TEXT GENERATED ALWAYS AS (data->>'type') STORED
+                    )
+                """)
+                
+                # ADD CONSTRAINT IF NOT EXISTS не поддерживается — проверяем вручную
+                cur.execute("""
+                    DO $$
+                    BEGIN
+                        IF NOT EXISTS (
+                            SELECT 1 FROM pg_constraint 
+                            WHERE conname = 'uq_raw_hash' 
+                              AND conrelid = '_shinservice_raw'::regclass
+                        ) THEN
+                            ALTER TABLE _shinservice_raw ADD CONSTRAINT uq_raw_hash UNIQUE (data_hash);
+                        END IF;
+                    END $$;
+                """)
+
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_raw_endpoint ON _shinservice_raw(endpoint_type)")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_raw_sku ON _shinservice_raw(sku)")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_raw_type ON _shinservice_raw(item_type)")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_raw_loaded ON _shinservice_raw(loaded_at DESC)")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_raw_gin ON _shinservice_raw USING GIN(data)")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_raw_gin_path ON _shinservice_raw USING GIN(data jsonb_path_ops)")
+
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS _shinservice_etl_errors (
+                        id BIGSERIAL PRIMARY KEY,
+                        run_id TEXT,
+                        endpoint_type TEXT,
+                        sku TEXT,
+                        error TEXT,
+                        raw_json JSONB,
+                        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+        finally:
+            conn.autocommit = autocommit_original
+    logger.info("migrate_schema: completed")
+
+# ====================== DB: блокировка ======================
+ADVISORY_LOCK_ID = 0x12F6E0
+
+def acquire_lock(conn, run_id, mode, logger):
+    """Захват эксклюзивной блокировки через pg_advisory_lock"""
     with conn.cursor() as cur:
-        cur.execute(DDL_RUNS_TABLE)
-        cur.execute(DDL_ERRORS_TABLE)
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_errors_run_id ON _shinservice_etl_errors(run_id)")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_errors_created_at ON _shinservice_etl_errors(created_at)")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_runs_mode ON _shinservice_etl_runs(mode)")
-        conn.commit()
+        cur.execute("SELECT pg_try_advisory_lock(%s)", (ADVISORY_LOCK_ID,))
+        if not cur.fetchone()[0]:
+            logger.warning("Другой процесс ETL уже выполняется, пропускаем")
+            return False
 
+        cur.execute(
+            "DELETE FROM _shinservice_etl_runs WHERE status = 'running' AND locked_at < NOW() - (%s || ' minutes')::INTERVAL",
+            (str(LOCK_TIMEOUT_MINUTES),)
+        )
 
-def update_run_status_start(conn, run_id: str, mode: str):
-    """Регистрирует начало запуска"""
-    with conn.cursor() as cur:
         cur.execute("""
-            INSERT INTO _shinservice_etl_runs (run_id, mode, status, started_at)
-            VALUES (%s, %s, 'start', NOW())
-            ON CONFLICT (run_id) DO UPDATE SET
-                mode = EXCLUDED.mode,
-                status = 'start',
-                started_at = NOW(),
-                finished_at = NULL
+            INSERT INTO _shinservice_etl_runs (run_id, mode, status, started_at, lock_owner, locked_at)
+            VALUES (%s, %s, 'running', NOW(), pg_backend_pid(), NOW())
         """, (run_id, mode))
         conn.commit()
+        return True
 
-
-def update_run_status_finish(conn, run_id: str, mode: str, status: str, 
-                              records_processed: int = 0, records_failed: int = 0):
-    """Записывает финальный статус запуска"""
+def release_lock(conn):
+    """Освобождение advisory lock и очистка lock_owner"""
     with conn.cursor() as cur:
         cur.execute("""
-            UPDATE _shinservice_etl_runs 
-            SET status = %s,
-                records_processed = %s,
-                records_failed = %s,
-                finished_at = NOW()
-            WHERE run_id = %s
-        """, (status, records_processed, records_failed, run_id))
+            UPDATE _shinservice_etl_runs
+            SET lock_owner = NULL, locked_at = NULL
+            WHERE lock_owner = pg_backend_pid()
+        """)
+        cur.execute("SELECT pg_advisory_unlock(%s)", (ADVISORY_LOCK_ID,))
         conn.commit()
 
-
-def log_error(conn, run_id: str, sku: str, error_msg: str, raw_data: dict):
-    """Сохраняет ошибку в dead-letter queue"""
+def update_run_status(conn, run_id, status, metrics=None):
+    """Обновление статуса и метрик"""
     with conn.cursor() as cur:
-        cur.execute("""
-            INSERT INTO _shinservice_etl_errors (run_id, sku, error, raw_json)
-            VALUES (%s, %s, %s, %s)
-        """, (run_id, sku, error_msg[:1000], json.dumps(raw_data, ensure_ascii=False)))
+        if status == 'success' and metrics:
+            cur.execute("""
+                UPDATE _shinservice_etl_runs 
+                SET status = 'success', finished_at = NOW(),
+                    catalog_worker_duration_ms = %s,
+                    price_worker_duration_ms = %s,
+                    stock_worker_duration_ms = %s,
+                    catalog_rows = %s, price_rows = %s, stock_rows = %s
+                WHERE run_id = %s
+            """, (
+                metrics.get('catalog', {}).get('worker_duration_ms', 0),
+                metrics.get('price', {}).get('worker_duration_ms', 0),
+                metrics.get('stock', {}).get('worker_duration_ms', 0),
+                metrics.get('catalog', {}).get('rows', 0),
+                metrics.get('price', {}).get('rows', 0),
+                metrics.get('stock', {}).get('rows', 0),
+                run_id
+            ))
+        else:
+            cur.execute("""
+                UPDATE _shinservice_etl_runs 
+                SET status = %s, finished_at = NOW()
+                WHERE run_id = %s
+            """, (status, run_id))
         conn.commit()
 
+# ====================== FETCH + SAVE ======================
+@retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1.5, min=2, max=60),
+       retry=retry_if_exception_type((requests.RequestException, psycopg2_errors.OperationalError)))
+def fetch_and_save(uuid, endpoint_type, run_id, logger):
+    with get_db_conn() as conn:
+        start_time = time.perf_counter()
+        url = f"{BASE_URL}/{uuid}/download?type={endpoint_type}&format=json"
 
-# ====================== ПОТОКОБЕЗОПАСНЫЙ СЧЁТЧИК ======================
-class SafeCounter:
-    def __init__(self):
-        self._value = 0
-        self._lock = None
-        try:
-            import threading
-            self._lock = threading.Lock()
-        except ImportError:
-            pass
-    
-    def increment(self) -> int:
-        if self._lock:
-            with self._lock:
-                self._value += 1
-                return self._value
-        self._value += 1
-        return self._value
-
-_request_counter = SafeCounter()
-
-
-# ====================== НАСТРОЙКА ЛОГИРОВАНИЯ ======================
-class SafeJsonFormatter(logging.Formatter):
-    def __init__(self, run_id: str):
-        super().__init__()
-        self.run_id = run_id
-    
-    def format(self, record):
-        extra = getattr(record, "extra", None)
-        if extra is None or not isinstance(extra, dict):
-            extra = {}
-        
-        log_entry = {
-            "time": self.formatTime(record, "%Y-%m-%dT%H:%M:%S%z"),
-            "level": record.levelname,
-            "message": record.getMessage(),
-            "module": record.module,
-            "funcName": record.funcName,
-            "lineno": record.lineno,
-            "run_id": self.run_id,
-        }
-        
-        for key, value in extra.items():
-            try:
-                log_entry[key] = value
-            except TypeError:
-                log_entry[key] = str(value)
-        
-        if record.exc_info:
-            log_entry["traceback"] = "".join(traceback.format_exception(*record.exc_info))
-        
-        return json.dumps(log_entry, ensure_ascii=False, default=str)
-
-
-# Глобальный логгер (инициализируется в setup_logging)
-_logger = None
-
-
-def get_logger():
-    return _logger
-
-
-def setup_logging(run_id: str):
-    global _logger
-    root_logger = logging.getLogger()
-    root_logger.setLevel(logging.INFO)
-    for h in root_logger.handlers[:]:
-        root_logger.removeHandler(h)
-    
-    formatter = SafeJsonFormatter(run_id)
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(formatter)
-    file_handler = logging.FileHandler('/var/log/shinservice_etl.log')
-    file_handler.setFormatter(formatter)
-    
-    root_logger.addHandler(console_handler)
-    root_logger.addHandler(file_handler)
-    _logger = logging.getLogger(__name__)
-
-
-# ====================== HTTP СЕССИЯ ======================
-session = requests.Session()
-session.headers.update({"User-Agent": "Canonical-Core-ETL/6.5 (Shinservice)"})
-
-
-# ====================== FETCH ======================
-@retry(stop=stop_after_attempt(4), wait=wait_exponential(multiplier=1.5, min=3, max=30),
-       retry=retry_if_exception_type((requests.RequestException, ConnectionError)))
-def fetch_data(uuid: str, export_type: str, request_name: str) -> Tuple[List[Dict], str]:
-    start = time.perf_counter()
-    url = f"{BASE_URL}/{uuid}/download?type={export_type}&format=json"
-    req_num = _request_counter.increment()
-    logger = get_logger()
-
-    try:
         resp = session.get(url, timeout=REQUEST_TIMEOUT)
         resp.raise_for_status()
-        data = resp.json()
-        
-        items = []
-        source = "unknown"
-        
-        if export_type == "stock":
-            if isinstance(data, list):
-                items = data
-                source = "stock_array"
-            elif isinstance(data, dict):
-                if data.get("status") == "OK":
-                    items = (data.get("data") or data).get("items", [])
-                    source = "stock_wrapper"
-                if not items:
-                    nested = data.get("data") or data
-                    items = nested.get("items") or nested.get("stock") or nested.get("stock_list") or []
-                    source = "stock_nested"
-        
-        if not items and isinstance(data, dict):
-            for key in ("tyre", "disk"):
-                chunk = data.get(key) or []
-                if isinstance(chunk, list):
-                    items.extend(chunk)
-                    source = key
-            if not items and "items" in data:
-                items = data.get("items") or []
-                source = "items"
-        
-        duration = time.perf_counter() - start
-        if logger:
-            logger.info("Fetch completed", extra={
-                "request_id": req_num, "request": request_name, "count": len(items),
-                "duration": round(duration, 2), "source": source, "status": "success"
-            })
-        return items, source
-    
-    except Exception as e:
-        duration = time.perf_counter() - start
-        if logger:
-            logger.error("Fetch failed", extra={
-                "request_id": req_num, "request": request_name, "duration": round(duration, 2),
-                "error": str(e), "status": "error"
-            }, exc_info=True)
-        raise
+        raw = resp.json()
 
+        if not raw:
+            logger.warning("Empty response from API", extra={"endpoint_type": endpoint_type, "run_id": run_id})
+            return endpoint_type, 0, 0, 0, 0.0
 
-def submit_requests(executor, requests_config):
-    logger = get_logger()
-    futures = []
-    for i, (uuid, export_type, request_name) in enumerate(requests_config):
-        if i > 0:
-            if logger:
-                logger.info("Delaying request", extra={"delay": REQUEST_DELAY, "request": request_name})
-            time.sleep(REQUEST_DELAY)
-        futures.append(executor.submit(fetch_data, uuid, export_type, request_name))
-    return futures
+        if isinstance(raw, dict):
+            for k in ("items", "tyre", "disk", "stock", "data"):
+                if k in raw and isinstance(raw[k], list):
+                    items = raw[k]
+                    break
+            else:
+                items = [raw]
+        else:
+            items = raw if isinstance(raw, list) else [raw]
 
+        values = []
+        error_values = []
+        failed = 0
 
-# ====================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ======================
-def _extract_shop_ids_from_stock(items: List[Dict]) -> Set[int]:
-    shop_ids = set()
-    logger = get_logger()
-    for item in items:
-        store_id = item.get("store_id")
-        if store_id is not None:
+        for item in items:
             try:
-                shop_ids.add(int(store_id))
-            except (ValueError, TypeError):
-                if logger:
-                    logger.warning(f"Invalid store_id: {store_id}")
-    return shop_ids
-
-
-def _extract_shop_ids_from_catalog(items: List[Dict]) -> Set[int]:
-    shop_ids = set()
-    for item in items:
-        for k in item:
-            if k.startswith("amount_shopId_"):
-                parts = k.replace("amount_shopId_", "")
-                if parts.isdigit():
-                    shop_ids.add(int(parts))
-    return shop_ids
-
-
-def _update_shops_table(conn, shop_ids: Set[int]):
-    if not shop_ids:
-        return
-
-    with conn.cursor() as cur:
-        shop_data = [(sid, f"Shop {sid}", datetime.now()) for sid in shop_ids]
-        execute_values(cur, """
-            INSERT INTO _shinservice_shops (shop_id, title, updated_at)
-            VALUES %s
-            ON CONFLICT (shop_id) DO UPDATE SET updated_at = NOW()
-        """, shop_data)
-        conn.commit()
-
-    logger = get_logger()
-    if logger:
-        logger.info("Shops updated", extra={"count": len(shop_ids), "status": "success"})
-
-
-def update_shops_from_stock(conn, items: List[Dict]):
-    shop_ids = _extract_shop_ids_from_stock(items)
-    _update_shops_table(conn, shop_ids)
-
-
-def update_shops_from_catalog(conn, items: List[Dict]):
-    shop_ids = _extract_shop_ids_from_catalog(items)
-    _update_shops_table(conn, shop_ids)
-
-
-def batch_insert(conn, table: str, columns: List[str], values: List[tuple], conflict: str = None) -> int:
-    if not values:
-        return 0
-
-    with conn.cursor() as cur:
-        sql = f"INSERT INTO {table} ({', '.join(columns)}) VALUES %s"
-        if conflict:
-            sql += f" ON CONFLICT {conflict}"
-        execute_values(cur, sql, values, page_size=BATCH_SIZE)
-        conn.commit()
-
-    return len(values)
-
-
-def safe_int(value, default=0):
-    if isinstance(value, (int, float)):
-        return int(value)
-    if isinstance(value, str) and value.isdigit():
-        return int(value)
-    return default
-
-
-# ====================== UPDATE ФУНКЦИИ ======================
-def update_products(conn, items: List[Dict], run_id: str) -> Tuple[int, int]:
-    columns = [
-        "sku", "title", "brand", "model", "gtin", "season", "diameter",
-        "width", "profile", "load_index", "speed_index",
-        "pins", "runflat", "extra_load", "photo_url", "raw_json", "updated_at"
-    ]
-
-    values = []
-    failed = 0
-    logger = get_logger()
-    for item in items:
-        sku = item.get("sku")
-        if not sku:
-            failed += 1
-            continue
-        
-        try:
-            values.append((
-                sku,
-                item.get("title"),
-                item.get("brand"),
-                item.get("model"),
-                item.get("gtin"),
-                item.get("season"),
-                item.get("diameter"),
-                item.get("width"),
-                item.get("profile"),
-                item.get("load_index"),
-                item.get("speed_index"),
-                bool(item.get("pins")),
-                bool(item.get("runflat")),
-                bool(item.get("extra_load")),
-                item.get("photo_url"),
-                json.dumps(item, ensure_ascii=False),
-                datetime.now()
-            ))
-        except Exception as e:
-            failed += 1
-            log_error(conn, run_id, sku, str(e), item)
-            if logger:
-                logger.warning(f"Failed to process sku={sku}: {e}")
-
-    if not values:
-        if logger:
-            logger.info("No products to update")
-        return 0, failed
-
-    conflict = "(sku) DO UPDATE SET " + ", ".join(f"{c}=EXCLUDED.{c}" for c in columns[:-1]) + ", updated_at=NOW()"
-
-    total = 0
-    for i in range(0, len(values), CHUNK_SIZE):
-        chunk = values[i:i + CHUNK_SIZE]
-        total += batch_insert(conn, "_shinservice_products", columns, chunk, conflict)
-        if logger:
-            logger.info("Products chunk", extra={"chunk": i // CHUNK_SIZE + 1, "rows": len(chunk), "status": "success"})
-
-    if logger:
-        logger.info("Products total updated", extra={"total": total, "failed": failed, "table": "products", "status": "success"})
-    return total, failed
-
-
-def update_offers_prices(conn, items: List[Dict], run_id: str) -> Tuple[int, int]:
-    """
-    Обновляет цены. Внимание: shop_id = NULL, так как цены общие для всех складов.
-    Для привязки к складу используется отдельная таблица остатков _shinservice_offers с shop_id.
-    """
-    columns = ["sku", "shop_id", "price", "price_retail", "price_msrp", "raw_json", "updated_at"]
-
-    values = []
-    failed = 0
-    logger = get_logger()
-    for item in items:
-        sku = item.get("sku")
-        if not sku:
-            failed += 1
-            continue
-        
-        try:
-            # shop_id = NULL для общих цен (не привязаны к складу)
-            values.append((
-                sku, None,
-                item.get("price"),
-                item.get("price_retail"),
-                item.get("price_msrp"),
-                json.dumps(item, ensure_ascii=False),
-                datetime.now()
-            ))
-        except Exception as e:
-            failed += 1
-            log_error(conn, run_id, sku, str(e), item)
-            if logger:
-                logger.warning(f"Failed to process price sku={sku}: {e}")
-
-    if not values:
-        if logger:
-            logger.info("No prices to update")
-        return 0, failed
-
-    conflict = ("(sku, shop_id) DO UPDATE SET price=EXCLUDED.price, price_retail=EXCLUDED.price_retail, price_msrp=EXCLUDED.price_msrp, raw_json=EXCLUDED.raw_json, updated_at=NOW()")
-
-    total = 0
-    for i in range(0, len(values), CHUNK_SIZE):
-        chunk = values[i:i + CHUNK_SIZE]
-        total += batch_insert(conn, "_shinservice_offers", columns, chunk, conflict)
-        if logger:
-            logger.info("Prices chunk", extra={"chunk": i // CHUNK_SIZE + 1, "rows": len(chunk), "status": "success"})
-
-    if logger:
-        logger.info("Prices total updated", extra={"total": total, "failed": failed, "table": "offers", "status": "success"})
-    return total, failed
-
-
-def update_offers_stock(conn, items: List[Dict], run_id: str) -> Tuple[int, int]:
-    """Обновляет остатки с привязкой к складу (shop_id)"""
-    columns = ["sku", "shop_id", "stock", "raw_json", "updated_at"]
-    
-    values = []
-    failed = 0
-    total_processed = 0
-    logger = get_logger()
-    
-    for item in items:
-        sku = item.get("sku")
-        if not sku:
-            failed += 1
-            continue
-        
-        try:
-            store_id = item.get("store_id")
-            stock_total = item.get("stock_total") or item.get("amount_total") or item.get("rest", 0)
-            
-            # Пропускаем записи без store_id (не создаём мусор с shop_id=0)
-            if store_id is None:
+                data_json = json.dumps(item, sort_keys=True, ensure_ascii=False)
+                data_hash = hashlib.sha256(data_json.encode('utf-8')).hexdigest()
+                values.append((endpoint_type, json.dumps(item, ensure_ascii=False), data_hash, run_id))
+            except Exception as e:
                 failed += 1
-                log_error(conn, run_id, sku, "Missing store_id", item)
-                if logger:
-                    logger.warning(f"Skipping stock record: missing store_id for sku={sku}")
-                continue
-            
-            store_id_int = safe_int(store_id)
-            if store_id_int == 0:
-                failed += 1
-                log_error(conn, run_id, sku, "Invalid store_id (converted to 0)", item)
-                if logger:
-                    logger.warning(f"Skipping stock record: invalid store_id for sku={sku}: {store_id}")
-                continue
-                
-            values.append((
-                sku,
-                store_id_int,
-                safe_int(stock_total, 0),
-                json.dumps(item, ensure_ascii=False),
-                datetime.now()
-            ))
-            total_processed += 1
-        except Exception as e:
-            failed += 1
-            log_error(conn, run_id, sku, str(e), item)
-            if logger:
-                logger.warning(f"Failed to process stock sku={sku}: {e}")
-            continue
-        
-        if len(values) >= MAX_STOCK_RECORDS:
-            if logger:
-                logger.warning(f"Reached MAX_STOCK_RECORDS limit ({MAX_STOCK_RECORDS}), stopping")
-            break
-    
-    if not values:
-        if logger:
-            logger.info("No stock to update")
-        return 0, failed
-    
-    conflict = ("(sku, shop_id) DO UPDATE SET "
-                "stock=EXCLUDED.stock, raw_json=EXCLUDED.raw_json, updated_at=NOW()")
-    
-    total = 0
-    for i in range(0, len(values), CHUNK_SIZE):
-        chunk = values[i:i + CHUNK_SIZE]
-        total += batch_insert(conn, "_shinservice_offers", columns, chunk, conflict)
-        if logger:
-            logger.info("Stock chunk", extra={"chunk": i // CHUNK_SIZE + 1, "rows": len(chunk), "status": "success"})
-    
-    unique_skus = {v[0] for v in values}
-    if logger:
-        logger.info("Stock total updated", extra={
-            "total": total, 
-            "unique_skus": len(unique_skus), 
-            "total_processed": total_processed,
+                sku = item.get("sku") if isinstance(item, dict) else None
+                error_values.append((run_id, endpoint_type, sku, str(e)[:500],
+                                    json.dumps(item, ensure_ascii=False) if isinstance(item, dict) else None))
+
+        if error_values:
+            with conn.cursor() as cur:
+                execute_values(cur, """
+                    INSERT INTO _shinservice_etl_errors (run_id, endpoint_type, sku, error, raw_json)
+                    VALUES %s
+                """, error_values, page_size=EXECUTE_VALUES_PAGE_SIZE)
+                conn.commit()
+
+        saved = 0
+        duplicates = 0
+        if values:
+            with conn.cursor() as cur:
+                result = execute_values(
+                    cur,
+                    """
+                    INSERT INTO _shinservice_raw (endpoint_type, data, data_hash, run_id)
+                    VALUES %s ON CONFLICT (data_hash) DO NOTHING
+                    RETURNING id
+                    """,
+                    values,
+                    page_size=EXECUTE_VALUES_PAGE_SIZE,
+                    fetch=True
+                )
+                saved = sum(len(batch) for batch in result) if result else 0
+                duplicates = len(values) - saved
+                conn.commit()
+
+        worker_duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
+
+        logger.info("Fetch completed", extra={
+            "endpoint_type": endpoint_type,
+            "items_total": len(items),
+            "saved_new": saved,
+            "duplicates_skipped": duplicates,
             "failed": failed,
-            "status": "success"
+            "worker_duration_ms": worker_duration_ms,
+            "run_id": run_id
         })
-    return total, failed
 
-
-def vacuum_analyze(conn):
-    """Выполняет VACUUM ANALYZE вне активной транзакции"""
-    logger = get_logger()
-    if logger:
-        logger.info("Starting VACUUM ANALYZE")
-    
-    conn.commit()
-    
-    with conn.cursor() as cur:
-        cur.execute("VACUUM ANALYZE _shinservice_products")
-        cur.execute("VACUUM ANALYZE _shinservice_offers")
-        cur.execute("VACUUM ANALYZE _shinservice_shops")
-    
-    conn.commit()
-    
-    if logger:
-        logger.info("VACUUM ANALYZE completed", extra={"status": "success"})
-
-
-def analyze_offers(conn):
-    """Выполняет ANALYZE для таблицы offers"""
-    logger = get_logger()
-    if logger:
-        logger.info("Running ANALYZE _shinservice_offers")
-    
-    conn.commit()
-    
-    with conn.cursor() as cur:
-        cur.execute("ANALYZE _shinservice_offers")
-    
-    conn.commit()
-    
-    if logger:
-        logger.info("ANALYZE completed", extra={"status": "success"})
-
+        return endpoint_type, saved, failed, len(items), worker_duration_ms
 
 # ====================== MAIN ======================
 def main():
-    # Генерируем run_id для этого запуска
     run_id = str(uuid4())[:8]
-    setup_logging(run_id)
-    logger = get_logger()
-    
-    start_total = time.perf_counter()
     mode = sys.argv[1] if len(sys.argv) > 1 else "stock"
 
-    if mode not in ("stock", "full"):
-        logger.error("Invalid mode", extra={"mode": mode, "status": "error"})
-        sys.exit(1)
+    logger = logging.getLogger(__name__)
 
-    conn = psycopg2.connect(DB_CONN)
-    
-    # Создаём дополнительные таблицы (один раз)
-    ensure_tables(conn)
-    
-    # Регистрируем начало запуска
-    update_run_status_start(conn, run_id, mode)
-    records_processed = 0
-    records_failed = 0
+    with get_db_conn() as conn:
+        if not acquire_lock(conn, run_id, mode, logger):
+            return
 
-    try:
-        logger.info("Update started", extra={"mode": mode.upper(), "status": "start"})
+        try:
+            logger.info("ETL run started", extra={"mode": mode, "run_id": run_id, "workers": MAX_WORKERS})
+            start_total = time.perf_counter()
+            endpoint_metrics = {}
+            total_ok = total_fail = 0
 
-        if mode == "full":
             with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-                # Каталог
-                logger.info("Loading catalog data")
-                catalog_futures = submit_requests(executor, [
-                    (SHINSERVICE_UUID_TYRES, "catalog", "tyres_catalog"),
-                    (SHINSERVICE_UUID_DISKS, "catalog", "disks_catalog")
-                ])
-                all_catalog = []
-                for future in as_completed(catalog_futures):
-                    items, _ = future.result()
-                    all_catalog.extend(items)
-                
-                logger.info("Pausing before price requests", extra={"delay": REQUEST_DELAY})
-                time.sleep(REQUEST_DELAY)
-                
-                # Цены
-                logger.info("Loading price data")
-                price_futures = submit_requests(executor, [
-                    (SHINSERVICE_UUID_TYRES, "price", "tyres_price"),
-                    (SHINSERVICE_UUID_DISKS, "price", "disks_price")
-                ])
-                all_prices = []
-                for future in as_completed(price_futures):
-                    items, _ = future.result()
-                    all_prices.extend(items)
-                
-                # Остатки (для полного обновления)
-                logger.info("Loading stock data")
-                stock_futures = submit_requests(executor, [
-                    (SHINSERVICE_UUID_TYRES, "stock", "tyres_stock"),
-                    (SHINSERVICE_UUID_DISKS, "stock", "disks_stock")
-                ])
-                all_stock = []
-                for future in as_completed(stock_futures):
-                    items, _ = future.result()
-                    all_stock.extend(items)
+                futures = []
+                uuids = [SHINSERVICE_UUID_TYRES, SHINSERVICE_UUID_DISKS]
+                endpoints = ["catalog", "price", "stock"] if mode == "full" else ["stock"]
 
-            # Обновление
-            update_shops_from_catalog(conn, all_catalog)
-            prod_processed, prod_failed = update_products(conn, all_catalog, run_id)
-            price_processed, price_failed = update_offers_prices(conn, all_prices, run_id)
-            stock_processed, stock_failed = update_offers_stock(conn, all_stock, run_id)
-            
-            records_processed += prod_processed + price_processed + stock_processed
-            records_failed += prod_failed + price_failed + stock_failed
-            
-            vacuum_analyze(conn)
-            
-            update_run_status_finish(conn, run_id, mode, 'success', records_processed, records_failed)
-            logger.info("Full update completed", extra={"mode": "full", "status": "success", 
-                                                        "records_processed": records_processed,
-                                                        "records_failed": records_failed})
+                for uuid in uuids:
+                    for ep in endpoints:
+                        futures.append(executor.submit(fetch_and_save, uuid, ep, run_id, logger))
 
-        else:  # stock
-            with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-                logger.info("Loading stock data")
-                stock_futures = submit_requests(executor, [
-                    (SHINSERVICE_UUID_TYRES, "stock", "tyres_stock"),
-                    (SHINSERVICE_UUID_DISKS, "stock", "disks_stock")
-                ])
-                all_stock = []
-                for future in as_completed(stock_futures):
-                    items, _ = future.result()
-                    all_stock.extend(items)
+                for future in as_completed(futures):
+                    ep, saved, failed, total_items, duration = future.result()
+                    total_ok += saved
+                    total_fail += failed
 
-            update_shops_from_stock(conn, all_stock)
-            stock_processed, stock_failed = update_offers_stock(conn, all_stock, run_id)
-            records_processed += stock_processed
-            records_failed += stock_failed
-            analyze_offers(conn)
-            
-            update_run_status_finish(conn, run_id, mode, 'success', records_processed, records_failed)
-            logger.info("Stock update completed", extra={"mode": "stock", "status": "success",
-                                                         "records_processed": records_processed,
-                                                         "records_failed": records_failed})
+                    metrics = endpoint_metrics.setdefault(ep, {'worker_duration_ms': 0, 'rows': 0})
+                    metrics['worker_duration_ms'] += duration
+                    metrics['rows'] += total_items
 
-        elapsed = time.perf_counter() - start_total
-        logger.info("Update finished", extra={"mode": mode.upper(), "duration": round(elapsed, 2), 
-                                              "status": "success", "records_processed": records_processed,
-                                              "records_failed": records_failed})
+            total_duration_ms = round((time.perf_counter() - start_total) * 1000, 2)
+            update_run_status(conn, run_id, 'success', endpoint_metrics)
 
-    except Exception as e:
-        update_run_status_finish(conn, run_id, mode, 'failed', records_processed, records_failed)
-        logger.error("Update failed", extra={"mode": mode.upper(), "error": str(e), "status": "error"}, exc_info=True)
-        sys.exit(1)
-    finally:
-        conn.close()
+            logger.info("ETL run completed successfully", extra={
+                "run_id": run_id, "mode": mode,
+                "total_saved": total_ok, "total_failed": total_fail,
+                "total_duration_ms": total_duration_ms,
+                "metrics": endpoint_metrics
+            })
 
+        except Exception:
+            update_run_status(conn, run_id, 'failed')
+            logger.error("ETL run failed", extra={"run_id": run_id}, exc_info=True)
+            raise
+        finally:
+            release_lock(conn)
 
 if __name__ == "__main__":
+    setup_logging()
+    logger = logging.getLogger("migration")
+    if os.getenv("RUN_MIGRATIONS", "false").lower() == "true":
+        logger.info("Running migrations", extra={"run_id": "migration", "mode": "init"})
+        migrate_schema(logger)
+    else:
+        logger.info("Migrations skipped (RUN_MIGRATIONS not set)", extra={"run_id": "migration", "mode": "init"})
     main()
